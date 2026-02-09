@@ -80,3 +80,43 @@ def feet_contact_time(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, thresh
     last_contact_time = contact_sensor.data.last_contact_time[:, sensor_cfg.body_ids]
     reward = torch.sum((last_contact_time < threshold) * first_air, dim=-1)
     return reward
+
+
+def motion_relative_joint_position_tracking_exp(env: ManagerBasedRLEnv, command_name: str, k: float, std: float) -> torch.Tensor:
+    """关节位置追踪奖励
+    公式: exp[-k * Σ||q_t^j ⊖ q̂_t^j||² / σ²] , 其中 k=1.0
+    """
+    from isaaclab.assets import Articulation
+    
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    asset: Articulation = env.scene[command.cfg.asset_name]
+    
+    joint_names = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    joint_indices = [asset.joint_names.index(name) for name in joint_names]
+    
+    target_joint_pos = command.joint_pos
+    current_joint_pos = asset.data.joint_pos[:, joint_indices]
+    
+    pos_error = torch.sum(torch.square(target_joint_pos - current_joint_pos), dim=-1)
+    
+    return torch.exp(-k * pos_error / (std**2))
+
+
+def motion_relative_joint_velocity_tracking_exp(env: ManagerBasedRLEnv, command_name: str, k: float, std: float) -> torch.Tensor:
+    """关节速度追踪奖励
+    公式: exp[-k * Σ(Δq̇)² / σ²], 其中 k=0.3
+    """
+    from isaaclab.assets import Articulation
+    
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    asset: Articulation = env.scene[command.cfg.asset_name]
+    
+    joint_names = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6"]
+    joint_indices = [asset.joint_names.index(name) for name in joint_names]
+    
+    target_joint_vel = command.joint_vel
+    current_joint_vel = asset.data.joint_vel[:, joint_indices]
+    
+    vel_error = torch.sum(torch.square(target_joint_vel - current_joint_vel), dim=-1)
+    
+    return torch.exp( -k * vel_error / (std**2))

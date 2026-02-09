@@ -21,7 +21,14 @@ def format_value(x):
 
 def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
     asset: Articulation = env.scene["robot"]
-    joint_sdk_names = env.cfg.scene.robot.joint_sdk_names
+    # joint_sdk_names = env.cfg.scene.robot.joint_sdk_names
+    if hasattr(env.cfg.scene.robot, 'joint_sdk_names'):
+        joint_sdk_names = env.cfg.scene.robot.joint_sdk_names
+    else:
+        # ✅ 对于非 Unitree 机器人，使用所有关节名
+        joint_sdk_names = env.unwrapped.scene["robot"].joint_names
+
+
     joint_ids_map, _ = resolve_matching_names(asset.data.joint_names, joint_sdk_names, preserve_order=True)
 
     cfg = {}  # noqa: SIM904
