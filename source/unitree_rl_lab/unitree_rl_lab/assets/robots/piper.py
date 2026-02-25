@@ -59,22 +59,41 @@ PIPER_CFG = ArticulationCfg(
     actuators={
         "piper_shoulder": ImplicitActuatorCfg(
             joint_names_expr=["joint[1-4]"],
-            effort_limit_sim=87.0,
+            effort_limit_sim=8.0,
             velocity_limit_sim=2.175,
-            stiffness=80.0,
-            damping=4.0,
+            stiffness=70.0,
+            damping=2.0,
         ),
         "piper_forearm": ImplicitActuatorCfg(
             joint_names_expr=["joint[5-6]"],
-            effort_limit_sim=12.0,
+            effort_limit_sim=8.0,
             velocity_limit_sim=2.61,
-            stiffness=80.0,
-            damping=4.0,
+            stiffness=70.0,
+            damping=2.0,
         ),
     },
     soft_joint_pos_limit_factor=1.0,
 )
-"""Configuration of Franka Emika Panda robot."""
+
+# 动作缩放系数：限制策略输出在安全力矩范围内（最大能力的25%）
+# 公式：scale = 0.25 * (力矩限制 / 刚度)
+# 作用：防止 PD 控制器输出力矩超限，确保训练稳定性
+_shoulder_effort_limit = PIPER_CFG.actuators["piper_shoulder"].effort_limit_sim
+_shoulder_stiffness = PIPER_CFG.actuators["piper_shoulder"].stiffness
+_forearm_effort_limit = PIPER_CFG.actuators["piper_forearm"].effort_limit_sim
+_forearm_stiffness = PIPER_CFG.actuators["piper_forearm"].stiffness
+
+PIPER_MIMIC_ACTION_SCALE = {
+    # 肩部关节 (joint1-4)
+    "joint1": 0.25 * _shoulder_effort_limit / _shoulder_stiffness,
+    "joint2": 0.25 * _shoulder_effort_limit / _shoulder_stiffness,
+    "joint3": 0.25 * _shoulder_effort_limit / _shoulder_stiffness,
+    "joint4": 0.25 * _shoulder_effort_limit / _shoulder_stiffness,
+    
+    # 前臂关节 (joint5-6)
+    "joint5": 0.25 * _forearm_effort_limit / _forearm_stiffness,
+    "joint6": 0.25 * _forearm_effort_limit / _forearm_stiffness,
+}
 
 
 PIPER__HIGH_PD_CFG = PIPER_CFG.copy()

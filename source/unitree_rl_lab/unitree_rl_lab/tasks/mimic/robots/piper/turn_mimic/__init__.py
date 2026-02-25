@@ -1,7 +1,7 @@
 import gymnasium as gym
 
 gym.register(
-    id="Piper-Turn-Handkerchief-Mimic-v0",
+    id="Piper-Turn-Mimic-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
