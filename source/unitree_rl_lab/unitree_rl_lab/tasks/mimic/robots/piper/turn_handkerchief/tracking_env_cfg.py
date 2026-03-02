@@ -4,7 +4,7 @@ import math
 import os
 
 import isaaclab.sim as sim_utils
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, DeformableObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
@@ -24,6 +24,10 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 import unitree_rl_lab.tasks.mimic.mdp as mdp
 from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_MIMIC_ACTION_SCALE
+from unitree_rl_lab.assets.deformable import HANDKERCHIEF_CFG
+
+# handkerchief-specific MDP terms (observations, rewards, terminations, events)
+from . import handkerchief_mdp as hk_mdp
 
 ##
 # Scene definition
@@ -52,6 +56,8 @@ class RobotSceneCfg(InteractiveSceneCfg):
     )
     # robots
     robot: ArticulationCfg = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    # deformable objects
+    handkerchief: DeformableObjectCfg = HANDKERCHIEF_CFG.replace(prim_path="{ENV_REGEX_NS}/handkerchief")
     # lights
     light = AssetBaseCfg(
         prim_path="/World/light",
@@ -140,6 +146,12 @@ class ObservationsCfg:
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.02, n_max=0.02))
         last_action = ObsTerm(func=mdp.last_action)
 
+        # -- handkerchief observations --
+        stick_tip_pos = ObsTerm(func=hk_mdp.stick_tip_pos_w)
+        stick_tip_vel = ObsTerm(func=hk_mdp.stick_tip_vel_w)
+        hk_root_pos = ObsTerm(func=hk_mdp.handkerchief_root_pos_w)
+        hk_root_vel = ObsTerm(func=hk_mdp.handkerchief_root_vel_w)
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -156,6 +168,13 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         action = ObsTerm(func=mdp.last_action)
+
+        # -- handkerchief observations (privileged) --
+        stick_tip_pos = ObsTerm(func=hk_mdp.stick_tip_pos_w)
+        stick_tip_vel = ObsTerm(func=hk_mdp.stick_tip_vel_w)
+        hk_root_pos = ObsTerm(func=hk_mdp.handkerchief_root_pos_w)
+        hk_root_vel = ObsTerm(func=hk_mdp.handkerchief_root_vel_w)
+        hk_to_tip = ObsTerm(func=hk_mdp.handkerchief_to_stick_tip_pos)
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
@@ -175,6 +194,13 @@ class EventCfg:
             "pos_distribution_params": (-0.01, 0.01),
             "operation": "add",
         },
+    )
+
+    # reset handkerchief: place it above the stick tip so it falls naturally
+    reset_handkerchief = EventTerm(
+        func=hk_mdp.reset_handkerchief_to_default,
+        mode="reset",
+        params={"height_offset": 0.05},  # 5 cm above stick tip
     )
 
 
@@ -204,12 +230,41 @@ class RewardsCfg:
         params={"command_name": "motion", "k": 0.3, "std": 0.8},
     )
 
+    # -- handkerchief rewards --
+    hk_spin = RewTerm(
+        func=hk_mdp.handkerchief_spin_angular_momentum,
+        weight=5.0,
+    )
+    hk_xy_dist = RewTerm(
+        func=hk_mdp.handkerchief_xy_distance_exp,
+        weight=0.5,
+        params={"std": 0.05},
+    )
+    hk_z_dist = RewTerm(
+        func=hk_mdp.handkerchief_z_distance_exp,
+        weight=0.5,
+        params={"std": 0.10},
+    )
+    hk_height = RewTerm(
+        func=hk_mdp.handkerchief_height_reward,
+        weight=0.5,
+        params={"target_height": 0.57, "tolerance": 0.20, "alpha": 2.0},
+    )
+    stick_tangential_speed = RewTerm(
+        func=hk_mdp.stick_tip_tangential_speed,
+        weight=5.0,
+    )
+
 
 @configclass
 class TerminationsCfg:
     """Termination terms for the MDP."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    hk_dropped = DoneTerm(
+        func=hk_mdp.handkerchief_dropped,
+        params={"min_height": 0.3},
+    )
 
 
 ##
@@ -222,7 +277,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the locomotion velocity-tracking environment."""
 
     # Scene settings
-    scene: RobotSceneCfg = RobotSceneCfg(num_envs=4096, env_spacing=2.5)
+    scene: RobotSceneCfg = RobotSceneCfg(num_envs=4096, env_spacing=2.5, replicate_physics=False)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -232,6 +287,12 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
     curriculum = None
+
+    # -- settling phase --
+    # Time (seconds) the robot holds its initial pose while the cloth falls.
+    # During this period actions are overridden, rewards are zeroed, and the
+    # reference trajectory is frozen.  Set to 0 to disable.
+    settling_time_s: float = 2.0
 
     def __post_init__(self):
         """Post initialization."""
@@ -243,6 +304,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.render_interval = self.decimation
         self.sim.physics_material = self.scene.terrain.physics_material
         self.sim.physx.gpu_max_rigid_patch_count = 10 * 2**15
+        self.sim.physx.gpu_max_soft_body_contacts = 2 ** 22  # fix Deformable volume contact buffer overflow
 
 
 class RobotPlayEnvCfg(RobotEnvCfg):

@@ -2,7 +2,7 @@ import gymnasium as gym
 
 gym.register(
     id="Piper-Turn-Handkerchief-Mimic-v0",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point=f"{__name__}.turn_handkerchief_mimic_env:TurnHandkerchiefMimicEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.tracking_env_cfg:RobotEnvCfg",
