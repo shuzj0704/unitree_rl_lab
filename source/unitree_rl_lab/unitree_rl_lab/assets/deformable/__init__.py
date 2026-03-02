@@ -1,0 +1,1 @@
+from .handkerchief_deformable import HANDKERCHIEF_CFG
