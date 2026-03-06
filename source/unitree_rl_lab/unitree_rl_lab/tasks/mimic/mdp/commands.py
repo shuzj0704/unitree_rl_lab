@@ -340,6 +340,27 @@ class MotionCommand(CommandTerm):
         if not self.robot.is_initialized:
             return
 
+        # Drive ghost robot with reference trajectory
+        if not hasattr(self, "_ghost_robot"):
+            try:
+                self._ghost_robot = self._env.scene["ghost_robot"]
+                print("[INFO] Ghost robot found - will show reference trajectory")
+            except KeyError:
+                self._ghost_robot = None
+        if self._ghost_robot is not None and self._ghost_robot.is_initialized:
+            ref_jp = self.joint_pos.clone()
+            ref_jv = self.joint_vel.clone()
+            all_env_ids = torch.arange(self.num_envs, device=self.device)
+            self._ghost_robot.write_joint_state_to_sim(ref_jp, ref_jv, env_ids=all_env_ids)
+            # For floating-base robots, also write root state from reference trajectory
+            if not self._ghost_robot.is_fixed_base:
+                ref_root_pos = self.body_pos_w[:, 0]
+                ref_root_quat = self.body_quat_w[:, 0]
+                ref_root_lin_vel = self.body_lin_vel_w[:, 0]
+                ref_root_ang_vel = self.body_ang_vel_w[:, 0]
+                root_state = torch.cat([ref_root_pos, ref_root_quat, ref_root_lin_vel, ref_root_ang_vel], dim=-1)
+                self._ghost_robot.write_root_state_to_sim(root_state, env_ids=all_env_ids)
+
         self.current_anchor_visualizer.visualize(self.robot_anchor_pos_w, self.robot_anchor_quat_w)
         self.goal_anchor_visualizer.visualize(self.anchor_pos_w, self.anchor_quat_w)
 

@@ -25,6 +25,16 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 import unitree_rl_lab.tasks.mimic.mdp as mdp
 from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_MIMIC_ACTION_SCALE
 
+# Ghost robot for reference trajectory visualization (play mode only)
+PIPER_GHOST_CFG = PIPER_CFG.copy()
+PIPER_GHOST_CFG.spawn.rigid_props.disable_gravity = True
+PIPER_GHOST_CFG.spawn.visible = True
+# Use very low stiffness so ghost doesn't fight joint writes
+PIPER_GHOST_CFG.actuators["piper_shoulder"].stiffness = 0.0
+PIPER_GHOST_CFG.actuators["piper_shoulder"].damping = 0.0
+PIPER_GHOST_CFG.actuators["piper_forearm"].stiffness = 0.0
+PIPER_GHOST_CFG.actuators["piper_forearm"].damping = 0.0
+
 ##
 # Scene definition
 ##
@@ -250,3 +260,5 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 1
         self.episode_length_s = 1e9
+        # Add ghost robot for reference trajectory visualization
+        self.scene.ghost_robot = PIPER_GHOST_CFG.replace(prim_path="{ENV_REGEX_NS}/GhostRobot")

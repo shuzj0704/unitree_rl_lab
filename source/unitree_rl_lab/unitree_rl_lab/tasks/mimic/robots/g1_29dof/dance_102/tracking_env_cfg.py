@@ -24,6 +24,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 import unitree_rl_lab.tasks.mimic.mdp as mdp
 from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_29DOF_MIMIC_ACTION_SCALE
 from unitree_rl_lab.assets.robots.unitree import UNITREE_G1_29DOF_MIMIC_CFG as ROBOT_CFG
+from unitree_rl_lab.assets.robots.unitree import G1_GHOST_CFG
 
 ##
 # Scene definition
@@ -342,3 +343,5 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 1
         self.episode_length_s = 1e9
+        # Add ghost robot for reference trajectory visualization
+        self.scene.ghost_robot = G1_GHOST_CFG.replace(prim_path="{ENV_REGEX_NS}/GhostRobot")

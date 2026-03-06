@@ -17,7 +17,7 @@ from isaaclab.utils import configclass
 
 from unitree_rl_lab.assets.robots import unitree_actuators
 
-UNITREE_MODEL_DIR = "/home/shu22/robodog/unitree_rl_lab/source/model/unitree_model"  # Replace with the actual path to your unitree_model directory
+UNITREE_MODEL_DIR = "/home/shu22/locomotion/unitree_rl_lab/source/model/unitree_model"  # Replace with the actual path to your unitree_model directory
 UNITREE_ROS_DIR = "path/to/unitree_ros"  # Replace with the actual path to your unitree_ros package
 
 
@@ -715,3 +715,14 @@ for a in UNITREE_G1_29DOF_MIMIC_CFG.actuators.values():
     for n in names:
         if n in e and n in s and s[n]:
             UNITREE_G1_29DOF_MIMIC_ACTION_SCALE[n] = 0.25 * e[n] / s[n]
+
+# add ghost robot for reference trajectory visualization (play mode only)
+G1_GHOST_CFG = UNITREE_G1_29DOF_MIMIC_CFG.copy()
+G1_GHOST_CFG.spawn.rigid_props.disable_gravity = True
+G1_GHOST_CFG.spawn.articulation_props.enabled_self_collisions = False
+G1_GHOST_CFG.spawn.activate_contact_sensors = False
+G1_GHOST_CFG.spawn.collision_props = sim_utils.CollisionPropertiesCfg(collision_enabled=False)
+# Zero PD so ghost doesn't fight joint writes
+for _act_name in G1_GHOST_CFG.actuators:
+    G1_GHOST_CFG.actuators[_act_name].stiffness = 0.0
+    G1_GHOST_CFG.actuators[_act_name].damping = 0.0

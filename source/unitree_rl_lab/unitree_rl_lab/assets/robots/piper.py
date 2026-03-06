@@ -58,18 +58,22 @@ PIPER_CFG = ArticulationCfg(
     ),
     actuators={
         "piper_shoulder": ImplicitActuatorCfg(
-            joint_names_expr=["joint[1-4]"],
+            joint_names_expr=["joint[1-3]"],
             effort_limit_sim=8.0,
-            velocity_limit_sim=2.175,
-            stiffness=70.0,
-            damping=2.0,
+            velocity_limit_sim=3.0,
+            # stiffness=70.0,
+            # damping=2.0,
+            stiffness=40.0,
+            damping=0.1,
         ),
         "piper_forearm": ImplicitActuatorCfg(
-            joint_names_expr=["joint[5-6]"],
+            joint_names_expr=["joint[4-6]"],
             effort_limit_sim=8.0,
-            velocity_limit_sim=2.61,
-            stiffness=70.0,
-            damping=2.0,
+            velocity_limit_sim=3.0,
+            # stiffness=70.0,
+            # damping=2.0,
+            stiffness=40.0,
+            damping=0.1,
         ),
     },
     soft_joint_pos_limit_factor=1.0,
@@ -106,3 +110,18 @@ PIPER__HIGH_PD_CFG.actuators["piper_forearm"].damping = 80.0
 
 This configuration is useful for task-space control using differential IK.
 """
+
+# Ghost robot for reference trajectory visualization (play mode only)
+PIPER_GHOST_CFG = PIPER_CFG.copy()
+PIPER_GHOST_CFG.spawn.rigid_props.disable_gravity = True
+PIPER_GHOST_CFG.spawn.visible = True
+# Use very low stiffness so ghost doesn't fight joint writes
+PIPER_GHOST_CFG.actuators["piper_shoulder"].stiffness = 0.0
+PIPER_GHOST_CFG.actuators["piper_shoulder"].damping = 0.0
+PIPER_GHOST_CFG.actuators["piper_forearm"].stiffness = 0.0
+PIPER_GHOST_CFG.actuators["piper_forearm"].damping = 0.0
+# Set a distinct color for the ghost robot
+PIPER_GHOST_CFG.spawn.visual_material = sim_utils.MdlFileCfg(
+    mdl_path="{NVIDIA_NUCLEUS_DIR}/Materials/Base/Colors/Blue.mdl",
+    project_uvw=True,
+)
