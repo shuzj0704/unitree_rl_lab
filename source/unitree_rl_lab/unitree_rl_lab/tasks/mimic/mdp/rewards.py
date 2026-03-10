@@ -81,7 +81,7 @@ def feet_contact_time(env: ManagerBasedRLEnv, sensor_cfg: SceneEntityCfg, thresh
     reward = torch.sum((last_contact_time < threshold) * first_air, dim=-1)
     return reward
 
-
+#   ============ Rewards: for piper turn mimic. ============
 def motion_relative_joint_position_tracking_exp(env: ManagerBasedRLEnv, command_name: str, k: float, std: float) -> torch.Tensor:
     """关节位置追踪奖励
     公式: exp[-k * Σ||q_t^j ⊖ q̂_t^j||² / σ²] , 其中 k=1.0
@@ -120,3 +120,36 @@ def motion_relative_joint_velocity_tracking_exp(env: ManagerBasedRLEnv, command_
     vel_error = torch.sum(torch.square(target_joint_vel - current_joint_vel), dim=-1)
     
     return torch.exp( -k * vel_error / (std**2))
+
+def motion_relative_stick_end_position_tracking_exp(env: ManagerBasedRLEnv, command_name: str, k: float, std: float) -> torch.Tensor:
+    """棍子末端位置追踪奖励（基于参考轨迹中的 end_pos_w）
+    公式: exp[-k * ||p_tip - p̂_tip||² / σ²]
+    
+    其中 p_tip 是通过刚体运动学从 link6 frame + offset 计算得到的当前末端位置，
+    p̂_tip 是参考轨迹中的末端位置 (end_pos_w)。
+    """
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    
+    target_tip_pos = command.stick_tip_pos_w     # [N, 3] 参考末端位置
+    current_tip_pos = command.robot_stick_tip_pos_w  # [N, 3] 当前末端位置
+    
+    pos_error = torch.sum(torch.square(target_tip_pos - current_tip_pos), dim=-1)
+    
+    return torch.exp(-k * pos_error / (std**2))
+
+
+def motion_relative_stick_end_velocity_tracking_exp(env: ManagerBasedRLEnv, command_name: str, k: float, std: float) -> torch.Tensor:
+    """棍子末端速度追踪奖励（基于参考轨迹中的 end_vel_w）
+    公式: exp[-k * ||v_tip - v̂_tip||² / σ²]
+    
+    其中 v_tip 通过刚体运动学计算: v_tip = v_com + ω × r，
+    v̂_tip 是参考轨迹中的末端速度 (end_vel_w)。
+    """
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    
+    target_tip_vel = command.stick_tip_vel_w     # [N, 3] 参考末端速度
+    current_tip_vel = command.robot_stick_tip_vel_w  # [N, 3] 当前末端速度
+    
+    vel_error = torch.sum(torch.square(target_tip_vel - current_tip_vel), dim=-1)
+    
+    return torch.exp(-k * vel_error / (std**2))

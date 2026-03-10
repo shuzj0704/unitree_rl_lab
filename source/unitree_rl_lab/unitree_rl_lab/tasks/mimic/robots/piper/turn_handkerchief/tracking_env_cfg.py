@@ -84,6 +84,8 @@ class CommandsCfg:
         anchor_body_name="base_link",
         resampling_time_range=(1.0e9, 1.0e9),   # 重采样时间范围，这里设置为极大值，表示不重采样
         debug_vis=True,     # 是否启用调试可视化
+        stick_tip_body_name="link6",              # 末端执行器 body 名称
+        stick_tip_offset=(0.0, 0.0, 0.17),        # 棍子末端在 link6 本地坐标系下的偏移
         pose_range={
             "x": (0.0, 0.0),    # 底座完全固定
             "y": (0.0, 0.0),
@@ -147,8 +149,8 @@ class ObservationsCfg:
         last_action = ObsTerm(func=mdp.last_action)
 
         # -- handkerchief observations --
-        stick_tip_pos = ObsTerm(func=hk_mdp.stick_tip_pos_w)
-        stick_tip_vel = ObsTerm(func=hk_mdp.stick_tip_vel_w)
+        stick_tip_pos = ObsTerm(func=mdp.stick_tip_pos_w, params={"command_name": "motion"})
+        stick_tip_vel = ObsTerm(func=mdp.stick_tip_vel_w, params={"command_name": "motion"})
         hk_root_pos = ObsTerm(func=hk_mdp.handkerchief_root_pos_w)
         hk_root_vel = ObsTerm(func=hk_mdp.handkerchief_root_vel_w)
 
@@ -170,8 +172,8 @@ class ObservationsCfg:
         action = ObsTerm(func=mdp.last_action)
 
         # -- handkerchief observations (privileged) --
-        stick_tip_pos = ObsTerm(func=hk_mdp.stick_tip_pos_w)
-        stick_tip_vel = ObsTerm(func=hk_mdp.stick_tip_vel_w)
+        stick_tip_pos = ObsTerm(func=mdp.stick_tip_pos_w, params={"command_name": "motion"})
+        stick_tip_vel = ObsTerm(func=mdp.stick_tip_vel_w, params={"command_name": "motion"})
         hk_root_pos = ObsTerm(func=hk_mdp.handkerchief_root_pos_w)
         hk_root_vel = ObsTerm(func=hk_mdp.handkerchief_root_vel_w)
         hk_to_tip = ObsTerm(func=hk_mdp.handkerchief_to_stick_tip_pos)
@@ -211,7 +213,7 @@ class RewardsCfg:
     # -- base
     joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-1e-9)
     joint_torque = RewTerm(func=mdp.joint_torques_l2, weight=-1e-6)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-1e-3)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.1)
     joint_limit = RewTerm(
         func=mdp.joint_pos_limits,
         weight=-10.0,

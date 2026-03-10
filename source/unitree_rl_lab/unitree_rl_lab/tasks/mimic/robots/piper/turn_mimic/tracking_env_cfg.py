@@ -34,6 +34,10 @@ PIPER_GHOST_CFG.actuators["piper_shoulder"].stiffness = 0.0
 PIPER_GHOST_CFG.actuators["piper_shoulder"].damping = 0.0
 PIPER_GHOST_CFG.actuators["piper_forearm"].stiffness = 0.0
 PIPER_GHOST_CFG.actuators["piper_forearm"].damping = 0.0
+# set the color of the ghost robot to be semi-transparent blue
+PIPER_GHOST_CFG.spawn.visual_material = sim_utils.MdlFileCfg(
+    mdl_path="{NVIDIA_NUCLEUS_DIR}/Materials/Base/Metal/Metal_Red.mdl",
+)
 
 ##
 # Scene definition
@@ -84,10 +88,12 @@ class CommandsCfg:
 
     motion = mdp.MotionCommandCfg(
         asset_name="robot",
-        motion_file=f"{os.path.dirname(__file__)}/trajectory_20260208_proc.npz",
+        motion_file=f"{os.path.dirname(__file__)}/2026-03-06-00-47-25_tran.npz",
         anchor_body_name="base_link",
         resampling_time_range=(1.0e9, 1.0e9),   # 重采样时间范围，这里设置为极大值，表示不重采样
         debug_vis=True,     # 是否启用调试可视化
+        stick_tip_body_name="link6",              # 末端执行器 body 名称
+        stick_tip_offset=(0.0, 0.0, 0.17),        # 棍子末端在 link6 本地坐标系下的偏移
         pose_range={
             "x": (0.0, 0.0),    # 底座完全固定
             "y": (0.0, 0.0),
@@ -150,6 +156,16 @@ class ObservationsCfg:
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.02, n_max=0.02))
         last_action = ObsTerm(func=mdp.last_action)
 
+        # Reference trajectory stick-tip
+        ref_stick_tip_pos = ObsTerm(
+            func=mdp.motion_stick_tip_pos_w, params={"command_name": "motion"},
+            noise=Unoise(n_min=-0.01, n_max=0.01)
+        )
+        ref_stick_tip_vel = ObsTerm(
+            func=mdp.motion_stick_tip_vel_w, params={"command_name": "motion"},
+            noise=Unoise(n_min=-0.02, n_max=0.02)
+        )
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -166,6 +182,10 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         action = ObsTerm(func=mdp.last_action)
+
+        # Reference trajectory stick-tip
+        ref_stick_tip_pos = ObsTerm(func=mdp.motion_stick_tip_pos_w, params={"command_name": "motion"})
+        ref_stick_tip_vel = ObsTerm(func=mdp.motion_stick_tip_vel_w, params={"command_name": "motion"})
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
@@ -195,10 +215,10 @@ class RewardsCfg:
     # -- base
     joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-1e-9)
     joint_torque = RewTerm(func=mdp.joint_torques_l2, weight=-1e-6)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-1e-3)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2)
     joint_limit = RewTerm(
         func=mdp.joint_pos_limits,
-        weight=-10.0,
+        weight=-3.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["joint[1-6]"])},
     )
 
@@ -211,7 +231,19 @@ class RewardsCfg:
     tracking_joint_vel = RewTerm(
         func=mdp.motion_relative_joint_velocity_tracking_exp,
         weight=0.2,
-        params={"command_name": "motion", "k": 0.3, "std": 0.8},
+        params={"command_name": "motion", "k": 0.3, "std": 1.2},
+    )
+
+    # -- stick tip (end-effector) tracking
+    tracking_stick_tip_pos = RewTerm(
+        func=mdp.motion_relative_stick_end_position_tracking_exp,
+        weight=0.5,
+        params={"command_name": "motion", "k": 1.0, "std": 0.5},
+    )
+    tracking_stick_tip_vel = RewTerm(
+        func=mdp.motion_relative_stick_end_velocity_tracking_exp,
+        weight=0.2,
+        params={"command_name": "motion", "k": 0.3, "std": 1.2},
     )
 
 

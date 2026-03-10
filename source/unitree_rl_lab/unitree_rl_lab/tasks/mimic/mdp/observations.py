@@ -81,3 +81,29 @@ def motion_anchor_ori_b(env: ManagerBasedEnv, command_name: str) -> torch.Tensor
     )
     mat = matrix_from_quat(ori)
     return mat[..., :2].reshape(mat.shape[0], -1)
+
+
+# ---- Stick tip (end-effector tip) observations ----
+
+def stick_tip_pos_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
+    """Robot stick-tip position in world frame.  (num_envs, 3)"""
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    return command.robot_stick_tip_pos_w
+
+
+def stick_tip_vel_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
+    """Robot stick-tip linear velocity in world frame.  (num_envs, 3)"""
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    return command.robot_stick_tip_vel_w
+
+
+def motion_stick_tip_pos_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
+    """Reference trajectory stick-tip position in world frame.  (num_envs, 3)"""
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    return command.stick_tip_pos_w
+
+
+def motion_stick_tip_vel_w(env: ManagerBasedEnv, command_name: str) -> torch.Tensor:
+    """Reference trajectory stick-tip linear velocity in world frame.  (num_envs, 3)"""
+    command: MotionCommand = env.command_manager.get_term(command_name)
+    return command.stick_tip_vel_w

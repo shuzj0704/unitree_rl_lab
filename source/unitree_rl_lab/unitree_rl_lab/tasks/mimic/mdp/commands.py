@@ -41,6 +41,16 @@ class MotionLoader:
         self._body_indexes = body_indexes
         self.time_step_total = self.joint_pos.shape[0]
 
+        # Optional: stick tip (end effector) reference trajectory
+        if "end_pos_w" in data:
+            self.end_pos_w = torch.tensor(data["end_pos_w"], dtype=torch.float32, device=device)
+        else:
+            self.end_pos_w = None
+        if "end_vel_w" in data:
+            self.end_vel_w = torch.tensor(data["end_vel_w"], dtype=torch.float32, device=device)
+        else:
+            self.end_vel_w = None
+
     @property
     def body_pos_w(self) -> torch.Tensor:
         return self._body_pos_w[:, self._body_indexes]
@@ -93,6 +103,16 @@ class MotionCommand(CommandTerm):
         self.metrics["error_body_rot"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["error_joint_pos"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["error_joint_vel"] = torch.zeros(self.num_envs, device=self.device)
+
+        # Stick tip tracking
+        if self.cfg.stick_tip_body_name is not None:
+            self.stick_tip_body_idx = self.robot.body_names.index(self.cfg.stick_tip_body_name)
+            self.stick_tip_offset_t = torch.tensor(
+                self.cfg.stick_tip_offset, dtype=torch.float32, device=self.device
+            )  # local offset from link frame origin to stick tip
+            self.metrics["error_stick_tip_pos"] = torch.zeros(self.num_envs, device=self.device)
+            self.metrics["error_stick_tip_vel"] = torch.zeros(self.num_envs, device=self.device)
+
         self.metrics["sampling_entropy"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["sampling_top1_prob"] = torch.zeros(self.num_envs, device=self.device)
         self.metrics["sampling_top1_bin"] = torch.zeros(self.num_envs, device=self.device)
@@ -181,6 +201,49 @@ class MotionCommand(CommandTerm):
     def robot_anchor_ang_vel_w(self) -> torch.Tensor:
         return self.robot.data.body_ang_vel_w[:, self.robot_anchor_body_index]
 
+    # ---- Stick tip (end-effector tip) reference & robot properties ----
+
+    @property
+    def stick_tip_pos_w(self) -> torch.Tensor:
+        """Reference stick tip position in world frame from trajectory data [num_envs, 3]."""
+        return self.motion.end_pos_w[self.time_steps] + self._env.scene.env_origins
+
+    @property
+    def stick_tip_vel_w(self) -> torch.Tensor:
+        """Reference stick tip linear velocity in world frame from trajectory data [num_envs, 3]."""
+        return self.motion.end_vel_w[self.time_steps]
+
+    @property
+    def robot_stick_tip_pos_w(self) -> torch.Tensor:
+        """Robot stick tip position computed from link6 frame + local offset [num_envs, 3].
+
+        stick_tip_pos = link_pos_w + R(link_quat_w) * stick_tip_offset
+        """
+        link_pos_w = self.robot.data.body_pos_w[:, self.stick_tip_body_idx]
+        link_quat_w = self.robot.data.body_quat_w[:, self.stick_tip_body_idx]
+        offset_b = self.stick_tip_offset_t.unsqueeze(0).expand(link_quat_w.shape[0], -1)
+        offset_w = quat_apply(link_quat_w, offset_b)
+        return link_pos_w + offset_w
+
+    @property
+    def robot_stick_tip_vel_w(self) -> torch.Tensor:
+        """Robot stick tip linear velocity using rigid body kinematics [num_envs, 3].
+
+        v_tip = v_com + omega x (tip_pos - com_pos)  (all in world frame)
+        """
+        link_quat_w = self.robot.data.body_quat_w[:, self.stick_tip_body_idx]
+        com_pos_b = self.robot.data.com_pos_b[:, self.stick_tip_body_idx]
+        lin_vel_com_w = self.robot.data.body_lin_vel_w[:, self.stick_tip_body_idx]
+        ang_vel_com_w = self.robot.data.body_ang_vel_w[:, self.stick_tip_body_idx]
+
+        # Vector from CoM to stick tip in body frame, then rotate to world
+        offset_b = self.stick_tip_offset_t.unsqueeze(0).expand(link_quat_w.shape[0], -1)
+        stick_to_com_b = offset_b - com_pos_b
+        stick_to_com_w = quat_apply(link_quat_w, stick_to_com_b)
+
+        # v_tip = v_com + omega x r
+        return lin_vel_com_w + torch.cross(ang_vel_com_w, stick_to_com_w, dim=-1)
+
     def _update_metrics(self):
         self.metrics["error_anchor_pos"] = torch.norm(self.anchor_pos_w - self.robot_anchor_pos_w, dim=-1)
         self.metrics["error_anchor_rot"] = quat_error_magnitude(self.anchor_quat_w, self.robot_anchor_quat_w)
@@ -203,6 +266,14 @@ class MotionCommand(CommandTerm):
 
         self.metrics["error_joint_pos"] = torch.norm(self.joint_pos - self.robot_joint_pos, dim=-1)
         self.metrics["error_joint_vel"] = torch.norm(self.joint_vel - self.robot_joint_vel, dim=-1)
+
+        if self.cfg.stick_tip_body_name is not None and self.motion.end_pos_w is not None:
+            self.metrics["error_stick_tip_pos"] = torch.norm(
+                self.stick_tip_pos_w - self.robot_stick_tip_pos_w, dim=-1
+            )
+            self.metrics["error_stick_tip_vel"] = torch.norm(
+                self.stick_tip_vel_w - self.robot_stick_tip_vel_w, dim=-1
+            )
 
     def _adaptive_sampling(self, env_ids: Sequence[int]):
         episode_failed = self._env.termination_manager.terminated[env_ids]
@@ -385,6 +456,10 @@ class MotionCommandCfg(CommandTermCfg):
     velocity_range: dict[str, tuple[float, float]] = {}
 
     joint_position_range: tuple[float, float] = (-0.52, 0.52)
+
+    # Stick tip tracking config
+    stick_tip_body_name: str | None = None  # e.g. "link6"
+    stick_tip_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)  # local offset in body frame
 
     adaptive_kernel_size: int = 1
     adaptive_lambda: float = 0.8

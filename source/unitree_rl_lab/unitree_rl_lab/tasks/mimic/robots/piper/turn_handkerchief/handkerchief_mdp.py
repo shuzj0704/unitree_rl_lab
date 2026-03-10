@@ -3,6 +3,10 @@
 This module contains observation, reward, termination, and event functions
 related to the deformable handkerchief object. Kept separate from the shared
 mimic MDP module to avoid mixing task-specific logic with general-purpose code.
+
+Stick-tip position/velocity computation is delegated to :class:`MotionCommand`
+(configured via ``stick_tip_body_name`` / ``stick_tip_offset`` in the command
+cfg), avoiding duplicated geometric calculations.
 """
 
 from __future__ import annotations
@@ -10,9 +14,11 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
-from isaaclab.assets import Articulation, DeformableObject
+from isaaclab.assets import DeformableObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply
+
+from unitree_rl_lab.tasks.mimic.mdp.commands import MotionCommand
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -22,38 +28,10 @@ if TYPE_CHECKING:
 # Helper
 # ==============================================================================
 
-STICK_LENGTH = 0.17  # length of the stick attached to link6 (metres)
 
-
-def _get_stick_tip_state(env: ManagerBasedRLEnv, robot_cfg: SceneEntityCfg) -> tuple[torch.Tensor, torch.Tensor]:
-    """Compute the stick-tip position and velocity in world frame.
-
-    Returns:
-        stick_tip_pos: (num_envs, 3)
-        stick_tip_vel: (num_envs, 3)
-    """
-    robot: Articulation = env.scene[robot_cfg.name]
-    end_body_idx = robot.find_bodies("link6")[0][0]
-
-    pos_link_w = robot.data.body_pos_w[:, end_body_idx]
-    quat_link_w = robot.data.body_quat_w[:, end_body_idx]
-    com_pos_b = robot.data.com_pos_b[:, end_body_idx]
-    lin_vel_w = robot.data.body_lin_vel_w[:, end_body_idx]
-    ang_vel_w = robot.data.body_ang_vel_w[:, end_body_idx]
-
-    stick_end_b = torch.tensor([0.0, 0.0, STICK_LENGTH], device=env.device)
-    stick_end_b = stick_end_b.unsqueeze(0).expand(quat_link_w.shape[0], -1)
-
-    # position
-    stick_dir = quat_apply(quat_link_w, stick_end_b)
-    stick_tip_pos = pos_link_w + stick_dir
-
-    # velocity  (v_p = v_c + ω × r)
-    stick_to_com_b = stick_end_b - com_pos_b
-    stick_to_com_w = quat_apply(quat_link_w, stick_to_com_b)
-    stick_tip_vel = lin_vel_w + torch.cross(ang_vel_w, stick_to_com_w, dim=-1)
-
-    return stick_tip_pos, stick_tip_vel
+def _get_command(env: ManagerBasedRLEnv, command_name: str = "motion") -> MotionCommand:
+    """Get the MotionCommand term (which provides stick tip pos/vel via config)."""
+    return env.command_manager.get_term(command_name)
 
 
 # ==============================================================================
@@ -78,33 +56,14 @@ def handkerchief_root_vel_w(
     return hk.data.root_vel_w
 
 
-def stick_tip_pos_w(
-    env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Stick-tip position in world frame.  (num_envs, 3)"""
-    pos, _ = _get_stick_tip_state(env, robot_cfg)
-    return pos
-
-
-def stick_tip_vel_w(
-    env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-) -> torch.Tensor:
-    """Stick-tip velocity in world frame.  (num_envs, 3)"""
-    _, vel = _get_stick_tip_state(env, robot_cfg)
-    return vel
-
-
 def handkerchief_to_stick_tip_pos(
     env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "motion",
     handkerchief_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
 ) -> torch.Tensor:
     """Relative position vector from stick-tip to handkerchief root.  (num_envs, 3)"""
     hk: DeformableObject = env.scene[handkerchief_cfg.name]
-    tip_pos, _ = _get_stick_tip_state(env, robot_cfg)
-    return hk.data.root_pos_w - tip_pos
+    return hk.data.root_pos_w - _get_command(env, command_name).robot_stick_tip_pos_w
 
 
 # ==============================================================================
@@ -137,12 +96,12 @@ def handkerchief_spin_angular_momentum(
 def handkerchief_xy_distance_exp(
     env: ManagerBasedRLEnv,
     std: float = 0.05,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "motion",
     handkerchief_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
 ) -> torch.Tensor:
     """Exponential reward for XY alignment of handkerchief root to stick-tip."""
     hk: DeformableObject = env.scene[handkerchief_cfg.name]
-    tip_pos, _ = _get_stick_tip_state(env, robot_cfg)
+    tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w
     xy_dist_sq = (hk.data.root_pos_w[:, 0] - tip_pos[:, 0]) ** 2 + \
                  (hk.data.root_pos_w[:, 1] - tip_pos[:, 1]) ** 2
     return torch.exp(-xy_dist_sq / (2 * std ** 2))
@@ -151,12 +110,12 @@ def handkerchief_xy_distance_exp(
 def handkerchief_z_distance_exp(
     env: ManagerBasedRLEnv,
     std: float = 0.10,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "motion",
     handkerchief_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
 ) -> torch.Tensor:
     """Exponential reward for Z alignment of handkerchief root to stick-tip."""
     hk: DeformableObject = env.scene[handkerchief_cfg.name]
-    tip_pos, _ = _get_stick_tip_state(env, robot_cfg)
+    tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w
     z_dist_sq = (hk.data.root_pos_w[:, 2] - tip_pos[:, 2]) ** 2
     return torch.exp(-z_dist_sq / (2 * std ** 2))
 
@@ -183,18 +142,19 @@ def handkerchief_height_reward(
 
 def stick_tip_tangential_speed(
     env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "motion",
 ) -> torch.Tensor:
     """Reward for the tangential (circular-motion) speed of the stick tip in XY."""
-    robot: Articulation = env.scene[robot_cfg.name]
-    end_body_idx = robot.find_bodies("link6")[0][0]
-    quat_link_w = robot.data.body_quat_w[:, end_body_idx]
+    command = _get_command(env, command_name)
 
-    stick_end_b = torch.tensor([0.0, 0.0, STICK_LENGTH], device=env.device).unsqueeze(0).expand(quat_link_w.shape[0], -1)
-    stick_dir = quat_apply(quat_link_w, stick_end_b)
+    # Get link6 orientation and offset from command config
+    link_quat_w = command.robot.data.body_quat_w[:, command.stick_tip_body_idx]
+    offset = command.stick_tip_offset_t.unsqueeze(0).expand(link_quat_w.shape[0], -1)
+
+    stick_dir = quat_apply(link_quat_w, offset)
     stick_dir_xy = stick_dir[:, :2]
 
-    _, tip_vel = _get_stick_tip_state(env, robot_cfg)
+    tip_vel = command.robot_stick_tip_vel_w
     tip_vel_xy = tip_vel[:, :2]
 
     unit_radius = stick_dir_xy / (torch.norm(stick_dir_xy, dim=-1, keepdim=True) + 1e-8)
@@ -228,7 +188,7 @@ def reset_handkerchief_to_default(
     env: ManagerBasedRLEnv,
     env_ids: torch.Tensor | None,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
-    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "motion",
     height_offset: float = 0.05,
 ) -> None:
     """Reset handkerchief so that its centre is directly above the stick tip.
@@ -248,7 +208,7 @@ def reset_handkerchief_to_default(
         env_ids = torch.arange(env.scene.num_envs, device=env.device)
 
     # --- compute current stick-tip position in world frame ---
-    stick_tip_pos, _ = _get_stick_tip_state(env, robot_cfg)  # (num_envs, 3)
+    stick_tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w  # (num_envs, 3)
 
     # --- read default nodal state and compute its current centre ---
     default_state = hk.data.default_nodal_state_w[env_ids].clone()
