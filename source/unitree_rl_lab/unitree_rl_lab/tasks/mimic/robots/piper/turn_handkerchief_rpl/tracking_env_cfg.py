@@ -23,7 +23,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 import unitree_rl_lab.tasks.mimic.mdp as mdp
-from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_MIMIC_ACTION_SCALE
+from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_GHOST_CFG, PIPER_MIMIC_ACTION_SCALE
 from unitree_rl_lab.assets.deformable import HANDKERCHIEF_CFG
 
 # handkerchief-specific MDP terms (observations, rewards, terminations, events)
@@ -56,6 +56,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
     )
     # robots
     robot: ArticulationCfg = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    ghost_robot: ArticulationCfg | None = None
     # deformable objects
     handkerchief: DeformableObjectCfg = HANDKERCHIEF_CFG.replace(prim_path="{ENV_REGEX_NS}/handkerchief")
     # lights
@@ -326,3 +327,5 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 1
         self.episode_length_s = 1e9
+        # enable ghost robot for reference trajectory visualization
+        self.scene.ghost_robot = PIPER_GHOST_CFG.replace(prim_path="{ENV_REGEX_NS}/GhostRobot")

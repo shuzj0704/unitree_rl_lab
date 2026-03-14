@@ -115,6 +115,8 @@ This configuration is useful for task-space control using differential IK.
 PIPER_GHOST_CFG = PIPER_CFG.copy()
 PIPER_GHOST_CFG.spawn.rigid_props.disable_gravity = True
 PIPER_GHOST_CFG.spawn.visible = True
+# Disable collision so ghost doesn't interfere with robot or deformable objects
+PIPER_GHOST_CFG.spawn.collision_props = sim_utils.CollisionPropertiesCfg(collision_enabled=False)
 # Use very low stiffness so ghost doesn't fight joint writes
 PIPER_GHOST_CFG.actuators["piper_shoulder"].stiffness = 0.0
 PIPER_GHOST_CFG.actuators["piper_shoulder"].damping = 0.0
