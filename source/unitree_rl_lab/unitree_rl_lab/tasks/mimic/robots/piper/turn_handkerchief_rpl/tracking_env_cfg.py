@@ -214,6 +214,13 @@ class EventCfg:
         },
     )
 
+    # reset robot joints to reference trajectory frame 0
+    # (avoid URDF default → trajectory mismatch oscillation)
+    reset_robot = EventTerm(
+        func=hk_mdp.reset_robot_to_trajectory_start,
+        mode="reset",
+    )
+
     # reset handkerchief: place it above the stick tip so it falls naturally
     reset_handkerchief = EventTerm(
         func=hk_mdp.reset_handkerchief_to_default,

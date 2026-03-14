@@ -346,6 +346,28 @@ def handkerchief_dropped(
 # Events (reset)
 # ==============================================================================
 
+def reset_robot_to_trajectory_start(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor | None,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    command_name: str = "motion",
+) -> None:
+    """Reset robot joints to reference trajectory frame 0.
+
+    Ensures the robot starts at the exact trajectory start pose,
+    avoiding PD transient oscillation from URDF default → trajectory mismatch.
+    """
+    robot = env.scene[asset_cfg.name]
+
+    if env_ids is None:
+        env_ids = torch.arange(env.scene.num_envs, device=env.device)
+
+    motion_cmd = _get_command(env, command_name)
+    joint_pos = motion_cmd.joint_pos[env_ids].clone()
+    joint_vel = torch.zeros_like(joint_pos)
+    robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
+
+
 def reset_handkerchief_to_default(
     env: ManagerBasedRLEnv,
     env_ids: torch.Tensor | None,
