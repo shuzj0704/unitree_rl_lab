@@ -20,14 +20,14 @@ class PointNetActorCriticCfg(RslRlPpoActorCriticCfg):
 @configclass
 class BasePPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 10000
-    save_interval = 400
+    max_iterations = 5000
+    save_interval = 200
     experiment_name = ""  # same as task name
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
+        actor_hidden_dims=[256, 128, 64],
+        critic_hidden_dims=[256, 128, 64],
         activation="elu",
     )
     algorithm = RslRlPpoAlgorithmCfg(
@@ -55,7 +55,7 @@ class PointNetPPORunnerCfg(RslRlOnPolicyRunnerCfg):
 
     num_steps_per_env = 24
     # 残差微调阶段通常收敛更快，不需要 30000 这么多次迭代
-    max_iterations = 5000
+    max_iterations = 6000
     save_interval = 400
     experiment_name = ""
     empirical_normalization = False

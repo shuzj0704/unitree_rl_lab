@@ -156,15 +156,15 @@ class ObservationsCfg:
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.02, n_max=0.02))
         last_action = ObsTerm(func=mdp.last_action)
 
-        # Reference trajectory stick-tip
-        ref_stick_tip_pos = ObsTerm(
-            func=mdp.motion_stick_tip_pos_w, params={"command_name": "motion"},
-            noise=Unoise(n_min=-0.01, n_max=0.01)
-        )
-        ref_stick_tip_vel = ObsTerm(
-            func=mdp.motion_stick_tip_vel_w, params={"command_name": "motion"},
-            noise=Unoise(n_min=-0.02, n_max=0.02)
-        )
+        # # Reference trajectory stick-tip
+        # ref_stick_tip_pos = ObsTerm(
+        #     func=mdp.motion_stick_tip_pos_w, params={"command_name": "motion"},
+        #     noise=Unoise(n_min=-0.01, n_max=0.01)
+        # )
+        # ref_stick_tip_vel = ObsTerm(
+        #     func=mdp.motion_stick_tip_vel_w, params={"command_name": "motion"},
+        #     noise=Unoise(n_min=-0.02, n_max=0.02)
+        # )
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -183,9 +183,9 @@ class ObservationsCfg:
         joint_vel = ObsTerm(func=mdp.joint_vel_rel)
         action = ObsTerm(func=mdp.last_action)
 
-        # Reference trajectory stick-tip
-        ref_stick_tip_pos = ObsTerm(func=mdp.motion_stick_tip_pos_w, params={"command_name": "motion"})
-        ref_stick_tip_vel = ObsTerm(func=mdp.motion_stick_tip_vel_w, params={"command_name": "motion"})
+        # # Reference trajectory stick-tip
+        # ref_stick_tip_pos = ObsTerm(func=mdp.motion_stick_tip_pos_w, params={"command_name": "motion"})
+        # ref_stick_tip_vel = ObsTerm(func=mdp.motion_stick_tip_vel_w, params={"command_name": "motion"})
 
     # observation groups
     policy: PolicyCfg = PolicyCfg()
@@ -215,7 +215,7 @@ class RewardsCfg:
     # -- base
     joint_acc = RewTerm(func=mdp.joint_acc_l2, weight=-1e-9)
     joint_torque = RewTerm(func=mdp.joint_torques_l2, weight=-1e-6)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.1)
     joint_limit = RewTerm(
         func=mdp.joint_pos_limits,
         weight=-3.0,
@@ -226,12 +226,12 @@ class RewardsCfg:
     tracking_joint_pos = RewTerm(
         func=mdp.motion_relative_joint_position_tracking_exp,
         weight=3.0,  # 高权重，这是主要目标
-        params={"command_name": "motion", "k": 1.0, "std": 0.25},  # 标准差
+        params={"command_name": "motion", "k": 1.0, "std": 0.2},  # 标准差
     )
     tracking_joint_vel = RewTerm(
         func=mdp.motion_relative_joint_velocity_tracking_exp,
         weight=0.2,
-        params={"command_name": "motion", "k": 0.3, "std": 1.2},
+        params={"command_name": "motion", "k": 0.3, "std": 0.5},
     )
 
     # -- stick tip (end-effector) tracking
@@ -243,7 +243,7 @@ class RewardsCfg:
     tracking_stick_tip_vel = RewTerm(
         func=mdp.motion_relative_stick_end_velocity_tracking_exp,
         weight=0.2,
-        params={"command_name": "motion", "k": 0.3, "std": 1.2},
+        params={"command_name": "motion", "k": 0.3, "std": 0.5},
     )
 
 
