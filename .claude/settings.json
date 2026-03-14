@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh -V)",
+      "Bash(echo $CONDA_DEFAULT_ENV)",
+      "Bash(echo $LD_LIBRARY_PATH)",
+      "Bash(env)",
+      "Bash(LD_LIBRARY_PATH=\"\" git push)"
+    ]
+  }
+}
