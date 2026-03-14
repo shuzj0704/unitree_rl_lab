@@ -126,8 +126,8 @@ class ActionsCfg:
         scale=1.0,
         use_default_offset=True,
         # TODO: 必须在这里填入你 Phase 1 训练好并导出的 .pt 模型绝对路径！
-        phase1_policy_path="/home/shu22/locomotion/unitree_rl_lab/logs/rsl_rl/piper_turn_mimic_v0/2026-03-13_00-41-16/exported/policy.pt",
-        residual_scale=0.1,  # k=0.1, 限制 RL 每次最多只能微调 0.1 弧度
+        phase1_policy_path="/home/shu22/locomotion/unitree_rl_lab/logs/rsl_rl/piper_turn_mimic_v0/2026-03-14_01-48-29/exported/policy.pt",
+        residual_scale=0.1,  # 残差缩放因子 k
         base_obs_group="phase1_policy",  # 指定 Base Policy 去哪里拿属于它的观测
     )
 
@@ -226,7 +226,7 @@ class EventCfg:
     reset_handkerchief = EventTerm(
         func=hk_mdp.reset_handkerchief_to_default,
         mode="reset",
-        params={"height_offset": 0.01},  # 1 cm above stick tip
+        params={"height_offset": 0.04},
     )
 
 
@@ -264,10 +264,7 @@ class RewardsCfg:
     hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=8.0) # 核心动能
     hk_xy_dist = RewTerm(func=hk_mdp.handkerchief_xy_distance_exp, weight=1.0, params={"std": 0.05})
     hk_z_dist = RewTerm(func=hk_mdp.handkerchief_z_distance_exp, weight=1.0, params={"std": 0.10})
-    hk_height = RewTerm(
-        func=hk_mdp.handkerchief_height_reward, weight=2.0,
-        params={"target_height": 0.57, "tolerance": 0.20, "alpha": 2.0},
-    )
+
     stick_tangential_speed = RewTerm(func=hk_mdp.stick_tip_tangential_speed, weight=5.0)
 
 

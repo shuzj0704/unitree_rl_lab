@@ -241,6 +241,9 @@ def handkerchief_spin_angular_momentum(
     A positive z angular-momentum means the cloth is spinning counter-clockwise
     (viewed from above).  The raw value is returned so that the reward weight
     can control whether to encourage CW or CCW rotation.
+
+    Note: weight > 0 encourages CCW (逆时针), weight < 0 encourages CW (顺时针).
+    Current reference trajectory is CCW, so use positive weight.
     """
     hk: DeformableObject = env.scene[asset_cfg.name]
     nodal_pos = hk.data.nodal_pos_w
@@ -280,26 +283,6 @@ def handkerchief_z_distance_exp(
     tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w
     z_dist_sq = (hk.data.root_pos_w[:, 2] - tip_pos[:, 2]) ** 2
     return torch.exp(-z_dist_sq / (2 * std ** 2))
-
-
-def handkerchief_height_reward(
-    env: ManagerBasedRLEnv,
-    target_height: float = 0.57,
-    tolerance: float = 0.20,
-    alpha: float = 2.0,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
-) -> torch.Tensor:
-    """Reward for keeping the handkerchief at the target height.
-
-    Returns 1.0 if within tolerance, otherwise -exp(alpha * error).
-    """
-    hk: DeformableObject = env.scene[asset_cfg.name]
-    height_error = torch.abs(hk.data.root_pos_w[:, 2] - target_height)
-    return torch.where(
-        height_error < tolerance,
-        torch.ones_like(height_error),
-        -torch.exp(alpha * height_error),
-    )
 
 
 def stick_tip_tangential_speed(
