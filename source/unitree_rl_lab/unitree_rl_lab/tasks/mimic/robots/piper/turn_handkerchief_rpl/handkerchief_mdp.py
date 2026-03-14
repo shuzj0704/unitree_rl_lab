@@ -90,6 +90,7 @@ class ResidualJointPositionAction(ActionTerm):
         # 步骤 B: 让冻结的 Base Policy 计算打底动作
         with torch.no_grad():
             a_base = self.base_policy(base_obs)
+        self._last_a_base = a_base.clone()  # cache for last_base_action obs
 
         # 步骤 C: 残差叠加公式  a_total = a_base + k * a_res
         total_action_normalized = a_base + self.cfg.residual_scale * self.raw_actions
@@ -116,6 +117,25 @@ class ResidualJointPositionActionCfg(ActionTermCfg):
     phase1_policy_path: str = ""      # Phase 1 导出的 .pt 模型的绝对路径
     residual_scale: float = 0.1       # 残差动作的缩放因子 k
     base_obs_group: str = "phase1_policy"  # Base Policy 观测组名称
+
+
+# ==============================================================================
+# Observations
+# ==============================================================================
+
+def last_base_action(env: "ManagerBasedRLEnv") -> torch.Tensor:
+    """Return the cached base policy output (a_base) from the previous step.
+
+    In Phase 2, ``mdp.last_action`` returns the PPO residual output (a_res),
+    which has a completely different distribution from the base policy output
+    that Phase 1 was trained with.  This function returns the correct value
+    so the frozen base policy sees its own previous output as ``last_action``.
+    """
+    action_term = env.action_manager.get_term("JointPositionAction")
+    if hasattr(action_term, "_last_a_base"):
+        return action_term._last_a_base.clone()
+    # first step: no previous a_base yet, return zeros
+    return torch.zeros(env.num_envs, action_term.action_dim, device=env.device)
 
 
 # ==============================================================================

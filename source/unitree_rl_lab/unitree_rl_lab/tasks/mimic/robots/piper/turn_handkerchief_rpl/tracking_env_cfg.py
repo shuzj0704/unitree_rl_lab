@@ -145,7 +145,8 @@ class ObservationsCfg:
         motion_anchor_ori_b = ObsTerm(func=mdp.motion_anchor_ori_b, params={"command_name": "motion"})
         joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel)
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel)
-        last_action = ObsTerm(func=mdp.last_action)
+        # Use base policy's own previous output, NOT the PPO residual (a_res)
+        last_action = ObsTerm(func=hk_mdp.last_base_action)
 
         def __post_init__(self):
             self.enable_corruption = False
