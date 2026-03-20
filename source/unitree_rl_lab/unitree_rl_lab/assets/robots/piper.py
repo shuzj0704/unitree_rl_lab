@@ -64,7 +64,7 @@ PIPER_CFG = ArticulationCfg(
             # stiffness=70.0,
             # damping=2.0,
             stiffness=40.0,
-            damping=0.1,
+            damping=2.0,
         ),
         "piper_forearm": ImplicitActuatorCfg(
             joint_names_expr=["joint[4-6]"],
@@ -73,7 +73,7 @@ PIPER_CFG = ArticulationCfg(
             # stiffness=70.0,
             # damping=2.0,
             stiffness=40.0,
-            damping=0.1,
+            damping=2.0,
         ),
     },
     soft_joint_pos_limit_factor=1.0,

@@ -289,7 +289,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the locomotion velocity-tracking environment."""
 
     # Scene settings
-    scene: RobotSceneCfg = RobotSceneCfg(num_envs=4, env_spacing=2.5, replicate_physics=False)
+    scene: RobotSceneCfg = RobotSceneCfg(num_envs=4, env_spacing=2.0, replicate_physics=False)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -325,4 +325,7 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         self.scene.num_envs = 1
         self.episode_length_s = 1e9
         # enable ghost robot for reference trajectory visualization
-        self.scene.ghost_robot = PIPER_GHOST_CFG.replace(prim_path="{ENV_REGEX_NS}/GhostRobot")
+        # self.scene.ghost_robot = PIPER_GHOST_CFG.replace(
+        #     prim_path="{ENV_REGEX_NS}/GhostRobot",
+        #     init_state=PIPER_GHOST_CFG.init_state.replace(pos=(0.5, 0.0, 0.0)),
+        # )

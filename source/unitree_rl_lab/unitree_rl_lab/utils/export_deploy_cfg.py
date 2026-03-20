@@ -28,7 +28,6 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         # ✅ 对于非 Unitree 机器人，使用所有关节名
         joint_sdk_names = env.unwrapped.scene["robot"].joint_names
 
-
     joint_ids_map, _ = resolve_matching_names(asset.data.joint_names, joint_sdk_names, preserve_order=True)
 
     cfg = {}  # noqa: SIM904
@@ -78,7 +77,7 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         term_cfg = term_cfg.to_dict()
 
         for _ in ["class_type", "asset_name", "debug_vis", "preserve_order", "use_default_offset"]:
-            del term_cfg[_]
+            term_cfg.pop(_, None)
         cfg["actions"][action_name] = term_cfg
 
         if action_term._joint_ids == slice(None):
@@ -110,7 +109,7 @@ def export_deploy_cfg(env: ManagerBasedRLEnv, log_dir):
         # clean cfg
         term_cfg = term_cfg.to_dict()
         for _ in ["func", "modifiers", "noise", "flatten_history_dim"]:
-            del term_cfg[_]
+            term_cfg.pop(_, None)
         cfg["observations"][obs_name] = term_cfg
 
     # --- save config file ---
