@@ -240,7 +240,7 @@ class RewardsCfg:
 
     # 【新增/极度关键】由于 PPO 现在输出的是残差 a_res，惩罚动作大小就是惩罚微调幅度！
     # 逼迫网络：非必要不微调，尽量靠 Base Policy 跑。
-    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-0.5) 
+    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-5.0)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.1)
 
     joint_limit = RewTerm(
@@ -248,22 +248,23 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["joint[1-6]"])},
     )
 
-    # -- 轨迹跟踪 (权重必须大幅降低，给救手绢留出动作空间) --
-    tracking_joint_pos = RewTerm(
-        func=mdp.motion_relative_joint_position_tracking_exp,
-        weight=0.5,  # 从 3.0 降到 0.5
-        params={"command_name": "motion", "k": 1.0, "std": 0.25},
-    )
-    tracking_joint_vel = RewTerm(
-        func=mdp.motion_relative_joint_velocity_tracking_exp,
-        weight=0.05, # 从 0.2 降到 0.05
-        params={"command_name": "motion", "k": 0.3, "std": 0.8},
-    )
+    # # -- 轨迹跟踪 (权重必须大幅降低，给救手绢留出动作空间) --
+    # tracking_joint_pos = RewTerm(
+    #     func=mdp.motion_relative_joint_position_tracking_exp,
+    #     weight=0.5,  # 从 3.0 降到 0.5
+    #     params={"command_name": "motion", "k": 1.0, "std": 0.25},
+    # )
+    # tracking_joint_vel = RewTerm(
+    #     func=mdp.motion_relative_joint_velocity_tracking_exp,
+    #     weight=0.05, # 从 0.2 降到 0.05
+    #     params={"command_name": "motion", "k": 0.3, "std": 0.8},
+    # )
 
     # -- 手绢状态 (核心目标，权重拉高) --
     hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=8.0) # 核心动能
     hk_xy_dist = RewTerm(func=hk_mdp.handkerchief_xy_distance_exp, weight=1.0, params={"std": 0.05})
     hk_z_dist = RewTerm(func=hk_mdp.handkerchief_z_distance_exp, weight=1.0, params={"std": 0.10})
+    hk_spread = RewTerm(func=hk_mdp.handkerchief_spread_area, weight=2.0)
 
     stick_tangential_speed = RewTerm(func=hk_mdp.stick_tip_tangential_speed, weight=5.0)
 

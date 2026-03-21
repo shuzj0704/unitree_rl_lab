@@ -308,6 +308,23 @@ def stick_tip_tangential_speed(
     return torch.abs(tangential_speed)
 
 
+def handkerchief_spread_area(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
+) -> torch.Tensor:
+    """Reward proportional to how spread-out the handkerchief is.
+
+    Computed as the sum of XY variance of all nodal positions relative to root.
+    Larger variance = more spread out = higher reward.
+    Formula: area_proxy = Var(x_nodes) + Var(y_nodes)
+    """
+    hk: DeformableObject = env.scene[asset_cfg.name]
+    nodal_pos = hk.data.nodal_pos_w  # (N, nodes, 3)
+    root_pos = hk.data.root_pos_w    # (N, 3)
+    rel_xy = nodal_pos[..., :2] - root_pos[:, None, :2]  # (N, nodes, 2)
+    var_xy = torch.var(rel_xy, dim=1)  # (N, 2)
+    return var_xy.sum(dim=-1)  # (N,)
+
 
 # ==============================================================================
 # Terminations
