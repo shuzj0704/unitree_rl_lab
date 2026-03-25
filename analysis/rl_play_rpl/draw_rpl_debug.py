@@ -14,7 +14,7 @@ import sys
 
 # ===================== 配置区 =====================
 # 修改这个变量即可切换不同实验
-EXPERIMENT = "2026-03-21_01-09-47"
+EXPERIMENT = "2026-03-23_14-37-33"
 RESIDUAL_SCALE = 0.1
 # ==================================================
 
@@ -178,6 +178,83 @@ def fig5_last_action_check(df, save_dir):
     print("  Fig 5: last_action check saved")
 
 
+# Default joint positions (offset for converting normalized actions to real positions)
+# From PIPER_CFG.init_state.joint_pos
+DEFAULT_JOINT_POS = {
+    "j1": 0.0, "j2": 0.261, "j3": -2.09,
+    "j4": 0.0, "j5": 0.34, "j6": 0.0,
+}
+
+
+def fig6_joint_tracking_comparison(df, save_dir, joint_name):
+    """Per-joint comparison: ref trajectory, phase1 target, phase2 target, actual pos.
+
+    Each curve on a separate subplot for clarity.
+    """
+    jn = joint_name
+    # joint index in p1_obs (first 6 dims = ref joint_pos from generated_commands)
+    j_idx = JOINT_NAMES.index(jn)
+    offset = DEFAULT_JOINT_POS[jn]
+
+    steps = df["step"].values
+    ref_pos = df[f"p1_obs_{j_idx}"].values             # reference trajectory (real space)
+    phase1_target = df[f"a_base_{jn}"].values + offset  # base policy target (normalized + offset)
+    phase2_target = df[f"a_total_{jn}"].values           # total target (already real space)
+    actual_pos = df[f"actual_jpos_{jn}"].values          # actual joint position
+
+    fig, axes = plt.subplots(4, 1, figsize=(16, 14), sharex=True)
+
+    # --- Subplot 1: Ref vs Phase1 target ---
+    ax = axes[0]
+    ax.plot(steps, ref_pos, label="Ref Trajectory", color="#1f77b4", linewidth=1.2)
+    ax.plot(steps, phase1_target, label="Phase1 (a_base) Target", color="#ff7f0e", linewidth=1, alpha=0.8)
+    ax.fill_between(steps, ref_pos, phase1_target, alpha=0.15, color="#ff7f0e")
+    err1 = np.mean(np.abs(ref_pos - phase1_target))
+    ax.set_title(f"{jn}: Ref vs Phase1 Target  (MAE={err1:.4f} rad)", fontsize=10)
+    ax.set_ylabel("Position (rad)")
+    ax.legend(fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    # --- Subplot 2: Ref vs Phase2 target ---
+    ax = axes[1]
+    ax.plot(steps, ref_pos, label="Ref Trajectory", color="#1f77b4", linewidth=1.2)
+    ax.plot(steps, phase2_target, label="Phase2 (a_total) Target", color="#2ca02c", linewidth=1, alpha=0.8)
+    ax.fill_between(steps, ref_pos, phase2_target, alpha=0.15, color="#2ca02c")
+    err2 = np.mean(np.abs(ref_pos - phase2_target))
+    ax.set_title(f"{jn}: Ref vs Phase2 Target  (MAE={err2:.4f} rad)", fontsize=10)
+    ax.set_ylabel("Position (rad)")
+    ax.legend(fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    # --- Subplot 3: Ref vs Actual ---
+    ax = axes[2]
+    ax.plot(steps, ref_pos, label="Ref Trajectory", color="#1f77b4", linewidth=1.2)
+    ax.plot(steps, actual_pos, label="Actual Position", color="#d62728", linewidth=1, alpha=0.8)
+    ax.fill_between(steps, ref_pos, actual_pos, alpha=0.15, color="#d62728")
+    err3 = np.mean(np.abs(ref_pos - actual_pos))
+    ax.set_title(f"{jn}: Ref vs Actual  (MAE={err3:.4f} rad)", fontsize=10)
+    ax.set_ylabel("Position (rad)")
+    ax.legend(fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    # --- Subplot 4: All overlaid ---
+    ax = axes[3]
+    ax.plot(steps, ref_pos, label="Ref Trajectory", color="#1f77b4", linewidth=1.5)
+    ax.plot(steps, phase1_target, label="Phase1 Target", color="#ff7f0e", linewidth=1, linestyle="--")
+    ax.plot(steps, phase2_target, label="Phase2 Target", color="#2ca02c", linewidth=1, linestyle="--")
+    ax.plot(steps, actual_pos, label="Actual", color="#d62728", linewidth=1, alpha=0.8)
+    ax.set_title(f"{jn}: All Comparison", fontsize=10)
+    ax.set_ylabel("Position (rad)")
+    ax.set_xlabel("Step")
+    ax.legend(fontsize=8)
+    ax.grid(True, linestyle="--", alpha=0.4)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_dir, f"fig6_tracking_{jn}.png"), dpi=200)
+    plt.close(fig)
+    print(f"  Fig 6: {jn} tracking comparison saved")
+
+
 def main():
     if not os.path.exists(CSV_FILE):
         print(f"错误：找不到 '{CSV_FILE}'，请检查 EXPERIMENT 变量。")
@@ -193,6 +270,9 @@ def main():
     fig3_residual_ratio(df, save_dir)
     fig4_actual_joint_pos(df, save_dir)
     fig5_last_action_check(df, save_dir)
+    # Per-joint tracking comparison
+    for jn in JOINT_NAMES:
+        fig6_joint_tracking_comparison(df, save_dir, jn)
 
     print(f"\n完成！所有图片保存在：{save_dir}/")
 
