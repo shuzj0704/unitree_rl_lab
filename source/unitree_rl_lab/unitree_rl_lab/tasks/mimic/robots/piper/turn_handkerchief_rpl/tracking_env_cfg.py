@@ -23,7 +23,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 import unitree_rl_lab.tasks.mimic.mdp as mdp
-from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_GHOST_CFG, PIPER_MIMIC_ACTION_SCALE
+from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_DELAYED_CFG, PIPER_GHOST_CFG, PIPER_MIMIC_ACTION_SCALE
 from unitree_rl_lab.assets.deformable import HANDKERCHIEF_CFG
 
 # handkerchief-specific MDP terms (observations, rewards, terminations, events)
@@ -55,7 +55,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
         ),
     )
     # robots
-    robot: ArticulationCfg = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot: ArticulationCfg = PIPER_DELAYED_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     ghost_robot: ArticulationCfg | None = None
     # deformable objects
     handkerchief: DeformableObjectCfg = HANDKERCHIEF_CFG.replace(prim_path="{ENV_REGEX_NS}/handkerchief")
@@ -162,8 +162,8 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         # 1. 运动学基础感知 (proprioception, 共 30 维)
         motion_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})  # 12
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.005, n_max=0.005))  # 6
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.02, n_max=0.02))    # 6
+        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))  # 6
+        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.1, n_max=0.1))    # 6
         last_action = ObsTerm(func=mdp.last_action)                                                # 6
 
         # 2. 点云视觉输入 (history_length=1 → 输出 [current(768) | previous(768)] = 1536 维)
@@ -240,20 +240,20 @@ class RewardsCfg:
 
     # 【新增/极度关键】由于 PPO 现在输出的是残差 a_res，惩罚动作大小就是惩罚微调幅度！
     # 逼迫网络：非必要不微调，尽量靠 Base Policy 跑。
-    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-5.0)
-    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.1)
+    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-10.0)
+    action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2)
 
     joint_limit = RewTerm(
         func=mdp.joint_pos_limits, weight=-10.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["joint[1-6]"])},
     )
 
-    # # -- 轨迹跟踪 (权重必须大幅降低，给救手绢留出动作空间) --
-    # tracking_joint_pos = RewTerm(
-    #     func=mdp.motion_relative_joint_position_tracking_exp,
-    #     weight=0.5,  # 从 3.0 降到 0.5
-    #     params={"command_name": "motion", "k": 1.0, "std": 0.25},
-    # )
+    # -- 轨迹跟踪 (权重必须大幅降低，给救手绢留出动作空间) --
+    tracking_joint_pos = RewTerm(
+        func=mdp.motion_relative_joint_position_tracking_exp,
+        weight=1,  # 加强约束
+        params={"command_name": "motion", "k": 1.0, "std": 0.2},
+    )
     # tracking_joint_vel = RewTerm(
     #     func=mdp.motion_relative_joint_velocity_tracking_exp,
     #     weight=0.05, # 从 0.2 降到 0.05
@@ -262,9 +262,9 @@ class RewardsCfg:
 
     # -- 手绢状态 (核心目标，权重拉高) --
     hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=8.0) # 核心动能
-    hk_xy_dist = RewTerm(func=hk_mdp.handkerchief_xy_distance_exp, weight=1.0, params={"std": 0.05})
+    hk_xy_dist = RewTerm(func=hk_mdp.handkerchief_xy_distance_exp, weight=1.0, params={"std": 0.10})
     hk_z_dist = RewTerm(func=hk_mdp.handkerchief_z_distance_exp, weight=1.0, params={"std": 0.10})
-    hk_spread = RewTerm(func=hk_mdp.handkerchief_spread_area, weight=2.0)
+    hk_spread = RewTerm(func=hk_mdp.handkerchief_spread_area, weight=50.0)
 
     stick_tangential_speed = RewTerm(func=hk_mdp.stick_tip_tangential_speed, weight=5.0)
 

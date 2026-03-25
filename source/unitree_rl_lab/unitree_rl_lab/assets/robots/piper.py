@@ -15,11 +15,70 @@ Reference: https://github.com/frankaemika/franka_ros
 
 import sys
 import os
+from collections.abc import Sequence
+
+import torch
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ImplicitActuatorCfg
+from isaaclab.actuators import ImplicitActuator, ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
+from isaaclab.utils import configclass
+from isaaclab.utils.buffers import DelayBuffer
 # from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
+
+
+# ==============================================================================
+# Delayed Implicit Actuator (for sim-to-real)
+# ==============================================================================
+
+class DelayedImplicitActuator(ImplicitActuator):
+    """ImplicitActuator with command delay buffer.
+
+    Delays joint position targets by N physics steps before passing to PhysX
+    continuous-time PD controller. Simulates real-world communication latency
+    while preserving the accuracy of implicit PD integration.
+    """
+
+    def __init__(self, cfg, *args, **kwargs):
+        super().__init__(cfg, *args, **kwargs)
+        if cfg.max_delay > 0:
+            self._delay_buffer = DelayBuffer(cfg.max_delay, self._num_envs, device=self._device)
+        else:
+            self._delay_buffer = None
+
+    def reset(self, env_ids):
+        if self._delay_buffer is None:
+            return
+        if env_ids is None or env_ids == slice(None):
+            num_envs = self._num_envs
+        else:
+            num_envs = len(env_ids)
+        time_lags = torch.randint(
+            self.cfg.min_delay, self.cfg.max_delay + 1,
+            (num_envs,), dtype=torch.int, device=self._device,
+        )
+        self._delay_buffer.set_time_lag(time_lags, env_ids)
+        self._delay_buffer.reset(env_ids)
+
+    def compute(self, control_action, joint_pos, joint_vel):
+        if self._delay_buffer is not None:
+            control_action.joint_positions = self._delay_buffer.compute(
+                control_action.joint_positions
+            )
+        return super().compute(control_action, joint_pos, joint_vel)
+
+
+@configclass
+class DelayedImplicitActuatorCfg(ImplicitActuatorCfg):
+    """ImplicitActuator + configurable command delay for sim-to-real."""
+
+    class_type: type = DelayedImplicitActuator
+
+    min_delay: int = 0
+    """Minimum number of physics steps of command delay. Defaults to 0."""
+
+    max_delay: int = 0
+    """Maximum number of physics steps of command delay. Defaults to 0."""
 
 # Set the Isaac Sim external assets directory path
 current_path = os.path.dirname(os.path.abspath(__file__))
@@ -61,8 +120,6 @@ PIPER_CFG = ArticulationCfg(
             joint_names_expr=["joint[1-3]"],
             effort_limit_sim=8.0,
             velocity_limit_sim=3.0,
-            # stiffness=70.0,
-            # damping=2.0,
             stiffness=40.0,
             damping=2.0,
         ),
@@ -70,8 +127,6 @@ PIPER_CFG = ArticulationCfg(
             joint_names_expr=["joint[4-6]"],
             effort_limit_sim=8.0,
             velocity_limit_sim=3.0,
-            # stiffness=70.0,
-            # damping=2.0,
             stiffness=40.0,
             damping=2.0,
         ),
@@ -97,6 +152,31 @@ PIPER_MIMIC_ACTION_SCALE = {
     # 前臂关节 (joint5-6)
     "joint5": 0.25 * _forearm_effort_limit / _forearm_stiffness,
     "joint6": 0.25 * _forearm_effort_limit / _forearm_stiffness,
+}
+
+
+# Piper with delayed actuators for sim-to-real training
+# Adds random command delay (0-3 physics steps = 0-30ms @dt=0.01)
+PIPER_DELAYED_CFG = PIPER_CFG.copy()
+PIPER_DELAYED_CFG.actuators = {
+    "piper_shoulder": DelayedImplicitActuatorCfg(
+        joint_names_expr=["joint[1-3]"],
+        effort_limit_sim=8.0,
+        velocity_limit_sim=3.0,
+        stiffness=40.0,
+        damping=2.0,
+        min_delay=0,
+        max_delay=3,
+    ),
+    "piper_forearm": DelayedImplicitActuatorCfg(
+        joint_names_expr=["joint[4-6]"],
+        effort_limit_sim=8.0,
+        velocity_limit_sim=3.0,
+        stiffness=40.0,
+        damping=2.0,
+        min_delay=0,
+        max_delay=3,
+    ),
 }
 
 

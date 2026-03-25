@@ -23,7 +23,7 @@ from isaaclab.utils import configclass
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 import unitree_rl_lab.tasks.mimic.mdp as mdp
-from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_MIMIC_ACTION_SCALE
+from unitree_rl_lab.assets.robots.piper import PIPER_CFG, PIPER_DELAYED_CFG, PIPER_MIMIC_ACTION_SCALE
 
 # Ghost robot for reference trajectory visualization (play mode only)
 PIPER_GHOST_CFG = PIPER_CFG.copy()
@@ -65,7 +65,7 @@ class RobotSceneCfg(InteractiveSceneCfg):
         ),
     )
     # robots
-    robot: ArticulationCfg = PIPER_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
+    robot: ArticulationCfg = PIPER_DELAYED_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot")
     # lights
     light = AssetBaseCfg(
         prim_path="/World/light",
@@ -152,8 +152,8 @@ class ObservationsCfg:
         )   # 没有作用，只是对齐接口
 
         # observation terms (order preserved)
-        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.005, n_max=0.005))
-        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.02, n_max=0.02))
+        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.1, n_max=0.1))
         last_action = ObsTerm(func=mdp.last_action)
 
         # # Reference trajectory stick-tip
