@@ -186,6 +186,93 @@ def point_cloud_from_top_camera(
     return relative_pc.view(env.num_envs, -1)  # [num_envs, 768]
 
 
+def point_cloud_from_depth_camera(
+    env: ManagerBasedRLEnv,
+    camera_name: str = "overhead_camera",
+    command_name: str = "motion",
+    num_samples: int = 256,
+    min_depth: float = 0.3,
+    max_depth: float = 1.5,
+) -> torch.Tensor:
+    """Extract handkerchief point cloud from depth camera — matches real-world pipeline.
+
+    Pipeline: depth map + instance segmentation -> filter handkerchief pixels ->
+    back-project to 3D -> random downsample to 256 points.
+    Falls back to depth-range filtering if instance segmentation is unavailable.
+
+    Returns: (num_envs, 768) = 256 points x 3 coords, relative to stick tip.
+    """
+    camera = env.scene.sensors[camera_name]
+    device = env.device
+    N = env.num_envs
+
+    # --- 1. Get depth map ---
+    depth = camera.data.output["distance_to_image_plane"]  # (N, H, W, 1)
+    d = depth.squeeze(-1)  # (N, H, W)
+    _, H, W = d.shape
+
+    # --- 2. Create valid pixel mask ---
+    if "instance_segmentation_fast" in camera.data.output:
+        seg = camera.data.output["instance_segmentation_fast"].squeeze(-1)  # (N, H, W)
+        valid_depth = (d > min_depth) & (d < max_depth) & ~torch.isinf(d)
+        valid_mask = valid_depth & (seg > 0)
+    else:
+        valid_mask = (d > min_depth) & (d < max_depth) & ~torch.isinf(d)
+
+    # --- 3. Back-project depth to 3D (camera frame) ---
+    intrinsics = camera.data.intrinsic_matrices  # (N, 3, 3)
+    fx = intrinsics[:, 0, 0]
+    fy = intrinsics[:, 1, 1]
+    cx = intrinsics[:, 0, 2]
+    cy = intrinsics[:, 1, 2]
+
+    v_grid, u_grid = torch.meshgrid(
+        torch.arange(H, device=device, dtype=torch.float32),
+        torch.arange(W, device=device, dtype=torch.float32),
+        indexing="ij",
+    )
+
+    x_cam = (u_grid.unsqueeze(0) - cx.view(-1, 1, 1)) * d / fx.view(-1, 1, 1)
+    y_cam = (v_grid.unsqueeze(0) - cy.view(-1, 1, 1)) * d / fy.view(-1, 1, 1)
+    points_cam = torch.stack([x_cam, y_cam, d], dim=-1)  # (N, H, W, 3)
+
+    # --- 4. Camera frame -> world frame ---
+    cam_pos = camera.data.pos_w  # (N, 3)
+    cam_quat = camera.data.quat_w_ros  # (N, 4) w,x,y,z
+
+    points_flat = points_cam.view(N, -1, 3)  # (N, H*W, 3)
+    points_world = _quat_rotate_batch(cam_quat, points_flat) + cam_pos.unsqueeze(1)
+
+    # --- 5. Sample 256 points from valid pixels ---
+    valid_flat = valid_mask.view(N, -1).float()  # (N, H*W)
+
+    no_valid = valid_flat.sum(dim=1) == 0
+    valid_flat[no_valid, 0] = 1.0
+
+    indices = torch.multinomial(valid_flat, num_samples, replacement=True)  # (N, 256)
+
+    sampled = torch.gather(
+        points_world, 1, indices.unsqueeze(-1).expand(-1, -1, 3)
+    )  # (N, 256, 3)
+
+    # Fill envs with no valid points using stick tip position
+    tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w  # (N, 3)
+    sampled[no_valid] = tip_pos[no_valid].unsqueeze(1)
+
+    # --- 6. Relative to stick tip (matches real-world pipeline) ---
+    relative_pc = sampled - tip_pos.unsqueeze(1)  # (N, 256, 3)
+
+    return relative_pc.view(N, -1)  # (N, 768)
+
+
+def _quat_rotate_batch(q: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
+    """Batch quaternion rotation. q: (N, 4) w,x,y,z, v: (N, M, 3) -> (N, M, 3)"""
+    xyz = q[:, 1:4]  # (N, 3)
+    t = 2.0 * torch.cross(xyz.unsqueeze(1).expand_as(v), v, dim=-1)  # (N, M, 3)
+    w = q[:, 0:1].unsqueeze(-1)  # (N, 1, 1)
+    return v + w * t + torch.cross(xyz.unsqueeze(1).expand_as(t), t, dim=-1)
+
+
 # ==============================================================================
 # Helper
 # ==============================================================================

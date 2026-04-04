@@ -13,7 +13,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg
+from isaaclab.sensors import ContactSensorCfg, TiledCameraCfg
 from isaaclab.terrains import TerrainImporterCfg
 
 ##
@@ -59,6 +59,29 @@ class RobotSceneCfg(InteractiveSceneCfg):
     ghost_robot: ArticulationCfg | None = None
     # deformable objects
     handkerchief: DeformableObjectCfg = HANDKERCHIEF_CFG.replace(prim_path="{ENV_REGEX_NS}/handkerchief")
+    # overhead depth camera — simulates real-world setup
+    # NOTE: requires GPU rendering backend (xvfb-run or display).
+    #       When enabled, also switch ObservationsCfg to point_cloud_from_depth_camera
+    #       and set enable_cameras=True in train_rpl.py.
+    overhead_camera = TiledCameraCfg(
+        prim_path="{ENV_REGEX_NS}/OverheadCamera",
+        offset=TiledCameraCfg.OffsetCfg(
+            pos=(0.016, -0.34, 1.47),
+            rot=(0.7071, 0.0, -0.7071, 0.0),
+            convention="world",
+        ),
+        spawn=sim_utils.PinholeCameraCfg(
+            focal_length=30.0,
+            focus_distance=1.0,
+            horizontal_aperture=20.955,
+            clipping_range=(0.1, 2.0),
+        ),
+        width=128, height=128,
+        data_types=["distance_to_image_plane", "instance_segmentation_fast"],
+        colorize_instance_segmentation=False,
+        update_period=0.0,
+    )
+
     # lights
     light = AssetBaseCfg(
         prim_path="/World/light",
@@ -168,7 +191,8 @@ class ObservationsCfg:
         last_action = ObsTerm(func=mdp.last_action)                                                # 6
 
         # 2. 点云视觉输入 (history_length=1 → 输出 [current(768) | previous(768)] = 1536 维)
-        point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_top_camera, history_length=1)
+        # point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_top_camera, history_length=1)
+        point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_depth_camera, history_length=1)
 
         def __post_init__(self):
             self.enable_corruption = True
