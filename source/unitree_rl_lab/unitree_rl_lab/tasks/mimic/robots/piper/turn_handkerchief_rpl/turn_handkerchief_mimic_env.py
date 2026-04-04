@@ -1,10 +1,12 @@
 """Custom ManagerBasedRLEnv subclass for the turn-handkerchief mimic task.
 
-Adds a "settling phase" at the start of each episode: the robot holds its initial
-pose (first frame of the reference trajectory) while the deformable handkerchief
-falls and drapes over the stick under gravity.  During settling:
+Adds a "settling phase" at the start of each episode: the robot is **physically
+frozen** (joint state written directly every sub-step, bypassing PD control) while
+the deformable handkerchief falls and drapes over the stick under gravity.
 
-* The policy's actions are **ignored** — the robot is held at its default joint pos.
+During settling:
+* The robot's joint positions are **teleported** every physics sub-step — no PD
+  transient, no gravity sag, completely static like pressing pause.
 * The MotionCommand time counter is **frozen** so the reference trajectory does not advance.
 * All **rewards are zeroed** so the settling period does not affect learning.
 * The **episode_length_buf is not incremented** (settling time is "free").
@@ -38,6 +40,7 @@ class TurnHandkerchiefMimicEnv(ManagerBasedRLEnv):
         # cache the initial (default) joint positions for holding during settling
         robot = self.scene["robot"]
         self._hold_joint_pos = robot.data.default_joint_pos.clone()  # (num_envs, num_joints)
+        self._hold_joint_vel = torch.zeros_like(self._hold_joint_pos)
 
         print(f"[TurnHandkerchiefMimicEnv] settling_time_s={self.settling_time_s}, "
               f"settling_steps={self.settling_steps}, step_dt={self.step_dt}")
@@ -63,10 +66,24 @@ class TurnHandkerchiefMimicEnv(ManagerBasedRLEnv):
         self.recorder_manager.record_pre_step()
         is_rendering = self.sim.has_gui() or self.sim.has_rtx_sensors()
 
+        # pre-compute settling env ids (avoid repeated nonzero inside loop)
+        settling_ids = is_settling.nonzero(as_tuple=False).squeeze(-1) if torch.any(is_settling) else None
+        robot = self.scene["robot"]
+
         for _ in range(self.cfg.decimation):
             self._sim_step_counter += 1
             self.action_manager.apply_action()
             self.scene.write_data_to_sim()
+
+            # Settling: teleport joint state every sub-step, bypassing PD controller.
+            # Robot is completely frozen — no gravity sag, no PD transient.
+            if settling_ids is not None and len(settling_ids) > 0:
+                robot.write_joint_state_to_sim(
+                    self._hold_joint_pos[settling_ids],
+                    self._hold_joint_vel[settling_ids],
+                    env_ids=settling_ids,
+                )
+
             self.sim.step(render=False)
             if self._sim_step_counter % self.cfg.sim.render_interval == 0 and is_rendering:
                 self.sim.render()
@@ -140,3 +157,10 @@ class TurnHandkerchiefMimicEnv(ManagerBasedRLEnv):
         # NOT the URDF default (robot.data.default_joint_pos).
         motion_cmd: MotionCommand = self.command_manager.get_term("motion")
         self._hold_joint_pos[env_ids] = motion_cmd.joint_pos[env_ids].clone()
+
+        # Also set PD target to hold position, so when settling ends the PD
+        # controller starts with zero error (smooth transition to active control)
+        robot = self.scene["robot"]
+        robot.set_joint_position_target(
+            self._hold_joint_pos[env_ids], env_ids=env_ids
+        )
