@@ -314,7 +314,10 @@ class MotionCommand(CommandTerm):
     def _resample_command(self, env_ids: Sequence[int]):
         if len(env_ids) == 0:
             return
-        self._adaptive_sampling(env_ids)
+        if self.cfg.start_from_frame_zero:
+            self.time_steps[env_ids] = 0
+        else:
+            self._adaptive_sampling(env_ids)
 
         root_pos = self.body_pos_w[:, 0].clone()
         root_ori = self.body_quat_w[:, 0].clone()
@@ -460,6 +463,8 @@ class MotionCommandCfg(CommandTermCfg):
     # Stick tip tracking config
     stick_tip_body_name: str | None = None  # e.g. "link6"
     stick_tip_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)  # local offset in body frame
+
+    start_from_frame_zero: bool = False
 
     adaptive_kernel_size: int = 1
     adaptive_lambda: float = 0.8

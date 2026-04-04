@@ -363,6 +363,13 @@ def reset_robot_to_trajectory_start(
         env_ids = torch.arange(env.scene.num_envs, device=env.device)
 
     motion_cmd = _get_command(env, command_name)
+
+    # Event Manager runs before Command Manager in _reset_idx,
+    # so time_steps still holds the previous episode's last frame.
+    # Reset it here to ensure we read frame 0.
+    if motion_cmd.cfg.start_from_frame_zero:
+        motion_cmd.time_steps[env_ids] = 0
+
     joint_pos = motion_cmd.joint_pos[env_ids].clone()
     joint_vel = torch.zeros_like(joint_pos)
     robot.write_joint_state_to_sim(joint_pos, joint_vel, env_ids=env_ids)
@@ -391,8 +398,12 @@ def reset_handkerchief_to_default(
     if env_ids is None:
         env_ids = torch.arange(env.scene.num_envs, device=env.device)
 
-    # --- compute current stick-tip position in world frame ---
-    stick_tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w  # (num_envs, 3)
+    # --- compute stick-tip position from reference trajectory (frame 0) ---
+    # NOTE: use stick_tip_pos_w (reference trajectory) instead of robot_stick_tip_pos_w
+    # (actual FK) because at reset time body_pos_w has not yet been updated by sim.step(),
+    # so the actual FK would return stale/wrong positions.
+    cmd = _get_command(env, command_name)
+    stick_tip_pos = cmd.stick_tip_pos_w  # (num_envs, 3)
 
     # --- read default nodal state and compute its current centre ---
     default_state = hk.data.default_nodal_state_w[env_ids].clone()

@@ -103,7 +103,8 @@ class CommandsCfg:
             "pitch": (0.0, 0.0),
             "yaw": (0.0, 0.0),
         },
-        joint_position_range=(-0.05, 0.05),
+        start_from_frame_zero=True,
+        joint_position_range=(0.0, 0.0),
         body_names=[
             "base_link",
             "link1",
@@ -204,16 +205,17 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
-    # startup
-    add_joint_default_pos = EventTerm(
-        func=mdp.randomize_joint_default_pos,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["joint[1-6]"]),
-            "pos_distribution_params": (-0.01, 0.01),
-            "operation": "add",
-        },
-    )
+    # startup — 关节零位随机偏移 (domain randomization)
+    # 已关闭：确保每次初始化姿态一致，让手绢准确下落到棍末端
+    # add_joint_default_pos = EventTerm(
+    #     func=mdp.randomize_joint_default_pos,
+    #     mode="startup",
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", joint_names=["joint[1-6]"]),
+    #         "pos_distribution_params": (-0.01, 0.01),
+    #         "operation": "add",
+    #     },
+    # )
 
     # reset robot joints to reference trajectory frame 0
     # (avoid URDF default → trajectory mismatch oscillation)
@@ -226,7 +228,7 @@ class EventCfg:
     reset_handkerchief = EventTerm(
         func=hk_mdp.reset_handkerchief_to_default,
         mode="reset",
-        params={"height_offset": 0.04},
+        params={"height_offset": 0.02},
     )
 
 
