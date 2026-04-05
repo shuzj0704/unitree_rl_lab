@@ -36,7 +36,7 @@ cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 # always enable cameras — Phase 2 uses TiledCamera for depth point cloud
-args_cli.enable_cameras = True
+args_cli.enable_cameras = False
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -123,6 +123,7 @@ def main():
             "step_trigger": lambda step: step == 0,
             "video_length": args_cli.video_length,
             "disable_logger": True,
+            "fps": 50,  # 匹配 step_dt=0.02s 的实时帧率
         }
         print("[INFO] Recording videos during training.")
         print_dict(video_kwargs, nesting=4)

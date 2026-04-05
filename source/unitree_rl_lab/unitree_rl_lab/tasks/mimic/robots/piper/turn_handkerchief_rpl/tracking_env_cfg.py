@@ -63,24 +63,24 @@ class RobotSceneCfg(InteractiveSceneCfg):
     # NOTE: requires GPU rendering backend (xvfb-run or display).
     #       When enabled, also switch ObservationsCfg to point_cloud_from_depth_camera
     #       and set enable_cameras=True in train_rpl.py.
-    overhead_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/OverheadCamera",
-        offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.016, -0.34, 1.47),
-            rot=(0.7071, 0.0, -0.7071, 0.0),
-            convention="world",
-        ),
-        spawn=sim_utils.PinholeCameraCfg(
-            focal_length=30.0,
-            focus_distance=1.0,
-            horizontal_aperture=20.955,
-            clipping_range=(0.1, 2.0),
-        ),
-        width=128, height=128,
-        data_types=["distance_to_image_plane", "instance_segmentation_fast"],
-        colorize_instance_segmentation=False,
-        update_period=0.0,
-    )
+    # overhead_camera = TiledCameraCfg(
+    #     prim_path="{ENV_REGEX_NS}/OverheadCamera",
+    #     offset=TiledCameraCfg.OffsetCfg(
+    #         pos=(0.016, -0.34, 1.47),
+    #         rot=(0.7071, 0.0, -0.7071, 0.0),
+    #         convention="world",
+    #     ),
+    #     spawn=sim_utils.PinholeCameraCfg(
+    #         focal_length=30.0,
+    #         focus_distance=1.0,
+    #         horizontal_aperture=20.955,
+    #         clipping_range=(0.1, 2.0),
+    #     ),
+    #     width=128, height=128,
+    #     data_types=["distance_to_image_plane", "instance_segmentation_fast"],
+    #     colorize_instance_segmentation=False,
+    #     update_period=0.0,
+    # )
 
     # lights
     light = AssetBaseCfg(
@@ -107,7 +107,7 @@ class CommandsCfg:
         motion_file=f"{os.path.dirname(__file__)}/2026-03-06-00-47-25_tran.npz",
         anchor_body_name="base_link",
         resampling_time_range=(1.0e9, 1.0e9),   # 重采样时间范围，这里设置为极大值，表示不重采样
-        debug_vis=True,     # 是否启用调试可视化
+        debug_vis=False,     # 是否启用调试可视化
         stick_tip_body_name="link6",              # 末端执行器 body 名称
         stick_tip_offset=(0.0, 0.0, 0.17),        # 棍子末端在 link6 本地坐标系下的偏移
         pose_range={
@@ -150,7 +150,7 @@ class ActionsCfg:
         scale=1.0,
         use_default_offset=True,
         # TODO: 必须在这里填入你 Phase 1 训练好并导出的 .pt 模型绝对路径！
-        phase1_policy_path="/home/shu22/locomotion/unitree_rl_lab/logs/rsl_rl/piper_turn_mimic_v0/2026-03-14_01-48-29/exported/policy.pt",
+        phase1_policy_path="/home/shu22/locomotion/unitree_rl_lab/logs/rsl_rl/piper_turn_mimic_v0/2026-03-24_01-59-33/exported/policy.pt",
         residual_scale=0.1,  # 残差缩放因子 k
         base_obs_group="phase1_policy",  # 指定 Base Policy 去哪里拿属于它的观测
     )
@@ -191,8 +191,8 @@ class ObservationsCfg:
         last_action = ObsTerm(func=mdp.last_action)                                                # 6
 
         # 2. 点云视觉输入 (history_length=1 → 输出 [current(768) | previous(768)] = 1536 维)
-        # point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_top_camera, history_length=1)
-        point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_depth_camera, history_length=1)
+        point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_top_camera, history_length=1)
+        # point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_depth_camera, history_length=1)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -277,7 +277,7 @@ class RewardsCfg:
     # -- 轨迹跟踪 (权重必须大幅降低，给救手绢留出动作空间) --
     tracking_joint_pos = RewTerm(
         func=mdp.motion_relative_joint_position_tracking_exp,
-        weight=1,  # 加强约束
+        weight=5,  # 加强约束
         params={"command_name": "motion", "k": 1.0, "std": 0.2},
     )
     # tracking_joint_vel = RewTerm(
@@ -287,7 +287,7 @@ class RewardsCfg:
     # )
 
     # -- 手绢状态 (核心目标，权重拉高) --
-    hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=8.0) # 核心动能
+    hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=1.0) # 核心动能
     hk_xy_dist = RewTerm(func=hk_mdp.handkerchief_xy_distance_exp, weight=1.0, params={"std": 0.10})
     hk_z_dist = RewTerm(func=hk_mdp.handkerchief_z_distance_exp, weight=1.0, params={"std": 0.10})
     hk_spread = RewTerm(func=hk_mdp.handkerchief_spread_area, weight=50.0)
@@ -331,7 +331,7 @@ class RobotEnvCfg(ManagerBasedRLEnvCfg):
     # Time (seconds) the robot holds its initial pose while the cloth falls.
     # During this period actions are overridden, rewards are zeroed, and the
     # reference trajectory is frozen.  Set to 0 to disable.
-    settling_time_s: float = 2.0
+    settling_time_s: float = 1.0
 
     def __post_init__(self):
         """Post initialization."""
@@ -351,6 +351,12 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         super().__post_init__()
         self.scene.num_envs = 1
         self.episode_length_s = 1e9
+
+        # viewer camera — for video recording of the policy
+        self.viewer.resolution = (1920, 1080)
+        self.viewer.eye = (4.0, -2.0, 2.0)
+        self.viewer.lookat = (-2.0, 2.0, 0.5)
+
         # enable ghost robot for reference trajectory visualization
         # self.scene.ghost_robot = PIPER_GHOST_CFG.replace(
         #     prim_path="{ENV_REGEX_NS}/GhostRobot",
