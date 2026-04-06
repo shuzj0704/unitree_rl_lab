@@ -151,7 +151,7 @@ class ActionsCfg:
         use_default_offset=True,
         # TODO: 必须在这里填入你 Phase 1 训练好并导出的 .pt 模型绝对路径！
         phase1_policy_path="/home/shu22/locomotion/unitree_rl_lab/logs/rsl_rl/piper_turn_mimic_v0/2026-03-24_01-59-33/exported/policy.pt",
-        residual_scale=0.1,  # 残差缩放因子 k
+        residual_scale=0.05,  # 残差缩放因子 k
         base_obs_group="phase1_policy",  # 指定 Base Policy 去哪里拿属于它的观测
     )
 
@@ -266,7 +266,7 @@ class RewardsCfg:
 
     # 【新增/极度关键】由于 PPO 现在输出的是残差 a_res，惩罚动作大小就是惩罚微调幅度！
     # 逼迫网络：非必要不微调，尽量靠 Base Policy 跑。
-    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-10.0)
+    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-15.0)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2)
 
     joint_limit = RewTerm(
@@ -277,7 +277,7 @@ class RewardsCfg:
     # -- 轨迹跟踪 (权重必须大幅降低，给救手绢留出动作空间) --
     tracking_joint_pos = RewTerm(
         func=mdp.motion_relative_joint_position_tracking_exp,
-        weight=5,  # 加强约束
+        weight=8,  # 加强约束
         params={"command_name": "motion", "k": 1.0, "std": 0.2},
     )
     # tracking_joint_vel = RewTerm(
@@ -354,8 +354,8 @@ class RobotPlayEnvCfg(RobotEnvCfg):
 
         # viewer camera — for video recording of the policy
         self.viewer.resolution = (1920, 1080)
-        self.viewer.eye = (4.0, -2.0, 2.0)
-        self.viewer.lookat = (-2.0, 2.0, 0.5)
+        self.viewer.eye = (3.0, -3.0, 2.0)
+        self.viewer.lookat = (-1.0, 1.0, 0.0)
 
         # enable ghost robot for reference trajectory visualization
         # self.scene.ghost_robot = PIPER_GHOST_CFG.replace(
