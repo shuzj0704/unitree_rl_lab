@@ -278,7 +278,7 @@ class RewardsCfg:
 
     # 【新增/极度关键】由于 PPO 现在输出的是残差 a_res，惩罚动作大小就是惩罚微调幅度！
     # 逼迫网络：非必要不微调，尽量靠 Base Policy 跑。
-    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-15.0)
+    residual_action_penalty = RewTerm(func=mdp.action_l2, weight=-10.0)
     action_rate_l2 = RewTerm(func=mdp.action_rate_l2, weight=-0.2)
 
     joint_limit = RewTerm(
@@ -290,7 +290,7 @@ class RewardsCfg:
     tracking_joint_pos = RewTerm(
         func=mdp.motion_relative_joint_position_tracking_exp,
         weight=8,  # 加强约束
-        params={"command_name": "motion", "k": 1.0, "std": 0.2},
+        params={"command_name": "motion", "k": 1.0, "std": 0.35},
     )
     # tracking_joint_vel = RewTerm(
     #     func=mdp.motion_relative_joint_velocity_tracking_exp,
@@ -299,7 +299,7 @@ class RewardsCfg:
     # )
 
     # -- 手绢状态 (核心目标，权重拉高) --
-    hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=1.0) # 核心动能
+    hk_spin = RewTerm(func=hk_mdp.handkerchief_spin_angular_momentum, weight=2.0)  # 核心动能
     hk_xy_dist = RewTerm(func=hk_mdp.handkerchief_xy_distance_exp, weight=1.0, params={"std": 0.10})
     hk_z_dist = RewTerm(func=hk_mdp.handkerchief_z_distance_exp, weight=1.0, params={"std": 0.10})
     hk_spread = RewTerm(func=hk_mdp.handkerchief_spread_area, weight=50.0)
