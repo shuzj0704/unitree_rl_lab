@@ -190,9 +190,21 @@ class ObservationsCfg:
         joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.1, n_max=0.1))    # 6
         last_action = ObsTerm(func=mdp.last_action)                                                # 6
 
-        # 2. 点云视觉输入 (history_length=1 → 输出 [current(768) | previous(768)] = 1536 维)
-        point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_top_camera, history_length=1)
-        # point_cloud = ObsTerm(func=hk_mdp.point_cloud_from_depth_camera, history_length=1)
+        # 2. 点云视觉输入 — 输出 [current(768) | previous(768)] = 1536 维。
+        #    内部维护 hold-refresh buffer：每 refresh_period_ctrl 个控制步才真正重采样一次，
+        #    其余步骤返回 hold 的旧帧，模拟真机 ~12 Hz 相机 + 50 Hz 控制回路语义。
+        #    历史帧 prev 是上一个相机周期 (~83 ms 前)，不是上一个控制步 (20 ms 前)。
+        point_cloud = ObsTerm(
+            func=hk_mdp.PointCloudFromTopCamera,  # type: ignore[arg-type]  # ManagerTermBase subclass
+            params={
+                "refresh_period_ctrl": 4,            # 50 Hz / 4 = 12.5 Hz 刷新
+                "refresh_period_range": (3, 5),      # jitter 10–16 Hz，模拟 ROS 抖动；设 None 禁用
+                "num_samples": 256,
+                "noise_xy_std": 0.005,               # XY 5 mm
+                "noise_z_std": 0.015,                # Z 15 mm
+                "command_name": "motion",
+            },
+        )
 
         def __post_init__(self):
             self.enable_corruption = True

@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.assets import Articulation, DeformableObject
 from isaaclab.envs.mdp.actions import ActionTerm
-from isaaclab.managers import ActionTermCfg, SceneEntityCfg
+from isaaclab.managers import ActionTermCfg, ManagerTermBase, ObservationTermCfg, SceneEntityCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.math import quat_apply
 
@@ -144,46 +144,98 @@ def last_base_action(env: "ManagerBasedRLEnv") -> torch.Tensor:
 
 # 文件: handkerchief_mdp.py (添加到 Observations 区域)
 
-def point_cloud_from_top_camera(
-    env: ManagerBasedRLEnv,
-    asset_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
-    command_name: str = "motion",
-    num_samples: int = 256,
-    simulate_camera_noise: bool = True
-) -> torch.Tensor:
+class PointCloudFromTopCamera(ManagerTermBase):
+    """Top-down mesh-based point cloud observation with sim-to-real frequency alignment.
+
+    Real RealSense cameras publish at ~12 Hz while the policy runs at 50 Hz.  This class
+    holds the last sampled point cloud for ``refresh_period_ctrl`` control steps (hold),
+    then resamples from the deformable mesh (refresh) — matching the real-robot pipeline
+    where the control loop reads the same cached camera frame across multiple cycles.
+
+    Output layout: ``[cur_rel(768), prev_rel(768)]`` = 1536 dims per env, where ``prev_rel``
+    is the point cloud from the previous camera cycle (~83 ms earlier), centred on the
+    current stick-tip pose.  This mirrors the deployment-side two-buffer semantics.
     """
-    模拟顶视相机的点云提取与预处理 (Sim2Real 极速版)。
-    它等价于：顶视相机拍摄 -> 颜色过滤拿到手绢 -> 提取 3D 点云 -> 降采样。
-    """
-    hk: DeformableObject = env.scene[asset_cfg.name]
 
-    # 1. 获取上帝视角的绝对节点坐标 (相当于完美相机过滤出了手绢)
-    nodal_pos = hk.data.nodal_pos_w  # [num_envs, num_nodes, 3]
-    num_nodes = nodal_pos.shape[1]
+    def __init__(self, cfg: ObservationTermCfg, env: "ManagerBasedRLEnv"):
+        super().__init__(cfg, env)
+        params = cfg.params or {}
+        num_samples: int = params.get("num_samples", 256)
+        refresh_period_ctrl: int = params.get("refresh_period_ctrl", 4)
 
-    # 2. 模拟真机处理：带放回的随机采样 256 个点
-    # 这抹平了仿真网格和真机深度图在点云密度上的差异
-    sample_indices = torch.randint(0, num_nodes, (num_samples,), device=env.device)
-    sampled_nodes_w = nodal_pos[:, sample_indices, :]  # [num_envs, 256, 3]
+        N, device = env.num_envs, env.device
+        self._cur_pc = torch.zeros(N, num_samples, 3, device=device)
+        self._prev_pc = torch.zeros(N, num_samples, 3, device=device)
+        self._steps_since_refresh = torch.zeros(N, dtype=torch.long, device=device)
+        self._next_refresh_at = torch.full(
+            (N,), refresh_period_ctrl, dtype=torch.long, device=device
+        )
 
-    # 3. 关键：注入顶视相机的特有噪声 (Sim2Real Domain Randomization)
-    if simulate_camera_noise:
-        # RealSense 等深度相机在 XY 平面（像素平移）误差较小，但在 Z 轴（深度探测）误差较大
-        noise = torch.randn_like(sampled_nodes_w)
-        noise[..., :2] *= 0.005  # X/Y 轴注入 5mm 的标准差噪声
-        noise[..., 2] *= 0.015   # Z 轴 (深度) 注入 1.5cm 的标准差噪声
-        sampled_nodes_w += noise
+    def reset(self, env_ids=None):
+        if env_ids is None:
+            ids_slice = slice(None)
+        else:
+            ids_slice = env_ids
+        # Force immediate refresh on next __call__ so cur_pc becomes fresh and prev_pc=0
+        self._steps_since_refresh[ids_slice] = self._next_refresh_at[ids_slice]
+        self._prev_pc[ids_slice] = 0.0
 
-    # 4. 视角转换与 Zero-centering (坐标中心化)
-    # 无论你的顶视相机挂在天花板多高的地方，网络都不应该去学习相机的绝对坐标。
-    # 我们必须把这 256 个点转换到“以机械臂末端(或手绢质心)为原点的局部坐标系”中。
-    tip_pos = _get_command(env, command_name).robot_stick_tip_pos_w.unsqueeze(1)
+    def __call__(
+        self,
+        env: "ManagerBasedRLEnv",
+        asset_cfg: SceneEntityCfg = SceneEntityCfg("handkerchief"),
+        command_name: str = "motion",
+        num_samples: int = 256,
+        noise_xy_std: float = 0.005,
+        noise_z_std: float = 0.015,
+        refresh_period_ctrl: int = 4,
+        refresh_period_range: tuple[int, int] | None = (3, 5),
+    ) -> torch.Tensor:
+        N = env.num_envs
+        device = env.device
 
-    # 计算相对形态 (这就完美抹除了相机绝对安装位置的差异)
-    relative_pc = sampled_nodes_w - tip_pos  # [num_envs, 256, 3]
+        # (1) Which envs should refresh this step?
+        refresh_mask = self._steps_since_refresh >= self._next_refresh_at
 
-    # 5. 展平为 1D 数组，喂给 RSL-RL 和 PointNet
-    return relative_pc.view(env.num_envs, -1)  # [num_envs, 768]
+        if refresh_mask.any():
+            hk: DeformableObject = env.scene[asset_cfg.name]
+            nodal_pos = hk.data.nodal_pos_w  # [N, M, 3]
+            num_nodes = nodal_pos.shape[1]
+
+            # (2) Random-with-replacement sample 256 points (matches real depth pipeline)
+            sample_indices = torch.randint(0, num_nodes, (num_samples,), device=device)
+            sampled = nodal_pos[:, sample_indices, :][refresh_mask]  # [K, 256, 3]
+
+            # (3) Inject camera noise once at refresh (frozen during hold — matches real sensor)
+            noise = torch.randn_like(sampled)
+            noise[..., :2] *= noise_xy_std
+            noise[..., 2] *= noise_z_std
+            sampled = sampled + noise
+
+            # (4) Push history: cur -> prev, new -> cur
+            self._prev_pc[refresh_mask] = self._cur_pc[refresh_mask]
+            self._cur_pc[refresh_mask] = sampled
+
+            # (5) Schedule next refresh
+            self._steps_since_refresh[refresh_mask] = 0
+            if refresh_period_range is not None:
+                lo, hi = refresh_period_range
+                K = int(refresh_mask.sum().item())
+                self._next_refresh_at[refresh_mask] = torch.randint(
+                    lo, hi + 1, (K,), device=device, dtype=torch.long
+                )
+            else:
+                self._next_refresh_at[refresh_mask] = refresh_period_ctrl
+
+        self._steps_since_refresh += 1
+
+        # (6) Centre both frames on the CURRENT tip pose (tip is real-time 50 Hz,
+        #     point clouds are held stale — matches real-robot control-loop semantics)
+        tip = _get_command(env, command_name).robot_stick_tip_pos_w.unsqueeze(1)  # [N,1,3]
+        cur_rel = self._cur_pc - tip
+        prev_rel = self._prev_pc - tip
+
+        return torch.cat([cur_rel.view(N, -1), prev_rel.view(N, -1)], dim=-1)  # [N, 1536]
 
 
 def point_cloud_from_depth_camera(
@@ -201,6 +253,10 @@ def point_cloud_from_depth_camera(
     Falls back to depth-range filtering if instance segmentation is unavailable.
 
     Returns: (num_envs, 768) = 256 points x 3 coords, relative to stick tip.
+
+    NOTE: This function is stateless (refreshes every control step at 50 Hz).  Before
+    using it in PolicyCfg, wrap it in a class with hold-refresh semantics similar to
+    ``PointCloudFromTopCamera`` so sim and real-robot point-cloud frequencies align.
     """
     camera = env.scene.sensors[camera_name]
     device = env.device
