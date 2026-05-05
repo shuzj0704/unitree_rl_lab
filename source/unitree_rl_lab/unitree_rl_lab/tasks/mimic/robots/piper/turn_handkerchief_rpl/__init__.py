@@ -13,3 +13,17 @@ gym.register(
 
     },
 )
+
+
+gym.register(
+    id="Piper-Turn-Handkerchief-RPL-NoPC-v0",
+    entry_point=f"{__name__}.turn_handkerchief_mimic_env:TurnHandkerchiefMimicEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.tracking_env_cfg:RobotNoPointCloudEnvCfg",
+        "play_env_cfg_entry_point": f"{__name__}.tracking_env_cfg:RobotNoPointCloudPlayEnvCfg",
+        "rsl_rl_cfg_entry_point": (
+            "unitree_rl_lab.tasks.mimic.agents.rsl_rl_ppo_pointnet_cfg:NoPointCloudPPORunnerCfg"
+        ),
+    },
+)

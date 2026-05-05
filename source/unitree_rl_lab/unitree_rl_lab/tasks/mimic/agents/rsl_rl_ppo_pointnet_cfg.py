@@ -88,3 +88,39 @@ class PointNetPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
+
+
+# ==============================================================================
+# Phase 2 Ablation: 残差策略，无 Point Cloud / PointNet actor 输入
+# ==============================================================================
+@configclass
+class NoPointCloudPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+    """SoftMimic w/o Point Cloud: residual PPO with a plain MLP actor."""
+
+    num_steps_per_env = 24
+    max_iterations = 6000
+    save_interval = 400
+    experiment_name = "piper_turn_handkerchief_rpl_no_pointcloud"
+    empirical_normalization = False
+
+    policy = RslRlPpoActorCriticCfg(
+        init_noise_std=1.0,
+        actor_hidden_dims=[256, 128, 64],
+        critic_hidden_dims=[512, 256, 128],
+        activation="elu",
+    )
+
+    algorithm = RslRlPpoAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.01,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=1.0e-3,
+        schedule="adaptive",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
+    )

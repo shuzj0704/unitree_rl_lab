@@ -151,7 +151,7 @@ class ActionsCfg:
         use_default_offset=True,
         # TODO: 必须在这里填入你 Phase 1 训练好并导出的 .pt 模型绝对路径！
         phase1_policy_path="/home/shu22/locomotion/unitree_rl_lab/logs/rsl_rl/piper_turn_mimic_v0/2026-03-24_01-59-33/exported/policy.pt",
-        residual_scale=0.05,  # 残差缩放因子 k
+        residual_scale=0.1,  # 残差缩放因子 k
         base_obs_group="phase1_policy",  # 指定 Base Policy 去哪里拿属于它的观测
     )
 
@@ -235,6 +235,31 @@ class ObservationsCfg:
     phase1_policy: Phase1PolicyCfg = Phase1PolicyCfg()
     policy: PolicyCfg = PolicyCfg()
     critic: PrivilegedCfg = PrivilegedCfg()
+
+
+@configclass
+class ObservationsNoPointCloudCfg(ObservationsCfg):
+    """Observation config for SoftMimic w/o Point Cloud ablation.
+
+    The Phase 2 actor receives only proprioceptive residual-policy inputs.
+    Phase 1 base-policy observations and the privileged critic are unchanged.
+    """
+
+    @configclass
+    class PolicyCfg(ObsGroup):
+        # motion_command(12) + joint_pos_rel(6) + joint_vel_rel(6) + last_action(6) = 30
+        motion_command = ObsTerm(func=mdp.generated_commands, params={"command_name": "motion"})
+        joint_pos_rel = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        joint_vel_rel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.1, n_max=0.1))
+        last_action = ObsTerm(func=mdp.last_action)
+
+        def __post_init__(self):
+            self.enable_corruption = True
+            self.concatenate_terms = True
+
+    phase1_policy: ObservationsCfg.Phase1PolicyCfg = ObservationsCfg.Phase1PolicyCfg()
+    policy: PolicyCfg = PolicyCfg()
+    critic: ObservationsCfg.PrivilegedCfg = ObservationsCfg.PrivilegedCfg()
 
 
 @configclass
@@ -374,3 +399,21 @@ class RobotPlayEnvCfg(RobotEnvCfg):
         #     prim_path="{ENV_REGEX_NS}/GhostRobot",
         #     init_state=PIPER_GHOST_CFG.init_state.replace(pos=(0.5, 0.0, 0.0)),
         # )
+
+
+@configclass
+class RobotNoPointCloudEnvCfg(RobotEnvCfg):
+    """SoftMimic residual-policy ablation without point-cloud actor input."""
+
+    observations: ObservationsNoPointCloudCfg = ObservationsNoPointCloudCfg()
+
+
+class RobotNoPointCloudPlayEnvCfg(RobotNoPointCloudEnvCfg):
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.num_envs = 1
+        self.episode_length_s = 1e9
+
+        self.viewer.resolution = (1920, 1080)
+        self.viewer.eye = (3.0, -3.0, 2.0)
+        self.viewer.lookat = (-1.0, 1.0, 0.0)
